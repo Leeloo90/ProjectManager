@@ -31,10 +31,12 @@ function formatBytes(bytes: number | null): string {
 export function AssetBrowser({
   frameioProjectId,
   rootAssetId,
+  accountId,
   projectName,
 }: {
   frameioProjectId: string
   rootAssetId: string | null
+  accountId: string | null
   projectName: string
 }) {
   const [assets, setAssets] = useState<Asset[]>([])
@@ -48,12 +50,15 @@ export function AssetBrowser({
     setLoading(true)
     setError(null)
     try {
-      // Use folderId if navigating a folder, otherwise use rootAssetId or projectId as fallback
       const resolvedFolderId = folderId ?? rootAssetId ?? null
-      const url = resolvedFolderId
-        ? `/api/frameio/assets?folderId=${resolvedFolderId}`
-        : `/api/frameio/assets?projectId=${frameioProjectId}`
-      const res = await fetch(url)
+      const params = new URLSearchParams()
+      if (accountId) params.set('accountId', accountId)
+      if (resolvedFolderId) {
+        params.set('folderId', resolvedFolderId)
+      } else {
+        params.set('projectId', frameioProjectId)
+      }
+      const res = await fetch(`/api/frameio/assets?${params.toString()}`)
       const data = await res.json()
       if (data.error) {
         setError(data.error)
@@ -68,7 +73,7 @@ export function AssetBrowser({
       setLoading(false)
       setLoaded(true)
     }
-  }, [frameioProjectId, rootAssetId])
+  }, [frameioProjectId, rootAssetId, accountId])
 
   function handleSync() {
     const currentFolderId = folderStack.length > 0 ? folderStack[folderStack.length - 1].id : undefined

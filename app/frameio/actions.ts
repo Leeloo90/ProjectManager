@@ -10,7 +10,8 @@ export async function linkFrameIoProject(
   frameioProjectId: string,
   frameioProjectName: string,
   frameioRootAssetId?: string | null,
-  frameioWorkspaceId?: string | null
+  frameioWorkspaceId?: string | null,
+  frameioAccountId?: string | null
 ) {
   await db
     .update(projects)
@@ -19,6 +20,7 @@ export async function linkFrameIoProject(
       frameioProjectName,
       frameioRootAssetId: frameioRootAssetId ?? null,
       frameioWorkspaceId: frameioWorkspaceId ?? null,
+      frameioAccountId: frameioAccountId ?? null,
       frameioUnreadComments: 0,
     })
     .where(eq(projects.id, appProjectId))
@@ -37,6 +39,9 @@ export async function unlinkFrameIoProject(appProjectId: string) {
     .set({
       frameioProjectId: null,
       frameioProjectName: null,
+      frameioRootAssetId: null,
+      frameioWorkspaceId: null,
+      frameioAccountId: null,
       frameioUnreadComments: 0,
     })
     .where(eq(projects.id, appProjectId))

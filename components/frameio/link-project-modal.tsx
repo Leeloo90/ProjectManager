@@ -54,7 +54,7 @@ export function LinkProjectModal({
     const proj = projects.find(p => p.id === selectedId)
     if (!proj) return
     startLinkTransition(async () => {
-      await linkFrameIoProject(appProjectId, proj.id, proj.name, proj.root_asset_id, proj.workspace_id)
+      await linkFrameIoProject(appProjectId, proj.id, proj.name, proj.root_asset_id, proj.workspace_id, proj.account_id)
       onClose()
       router.refresh()
     })

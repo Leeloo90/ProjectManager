@@ -38,7 +38,7 @@ type Project = {
   includedRevisionRounds: number | null; frameIoLink: string | null; drivefinalsLink: string | null;
   driveArchiveLink: string | null; notes: string | null; invoiceId: string | null;
   productionCompanyId: string; clientId: string; clientName: string | null; companyName: string | null;
-  frameioProjectId: string | null; frameioProjectName: string | null; frameioRootAssetId: string | null; frameioUnreadComments: number | null;
+  frameioProjectId: string | null; frameioProjectName: string | null; frameioRootAssetId: string | null; frameioAccountId: string | null; frameioUnreadComments: number | null;
 }
 
 type Deliverable = {
@@ -790,6 +790,7 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
             <AssetBrowser
               frameioProjectId={project.frameioProjectId!}
               rootAssetId={project.frameioRootAssetId}
+              accountId={project.frameioAccountId}
               projectName={project.frameioProjectName ?? 'Project'}
             />
           )}

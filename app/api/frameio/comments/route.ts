@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getFrameIoToken } from '@/lib/frameio/get-token'
 import { convertFrameToTimecode } from '@/lib/frameio/sync-comments'
 
-const FRAMEIO_API_V2 = 'https://api.frame.io/v2'
-const FRAMEIO_API_V4 = 'https://api.frame.io/v4'
+const FRAMEIO_V4 = 'https://api.frame.io/v4'
 
 export async function GET(request: NextRequest) {
   const token = await getFrameIoToken()
@@ -16,21 +15,12 @@ export async function GET(request: NextRequest) {
   if (!assetId) return NextResponse.json({ error: 'assetId required' }, { status: 400 })
 
   try {
-    // Try V2 first; V4 /assets/{id}/comments may not be registered
-    let res = await fetch(`${FRAMEIO_API_V2}/assets/${assetId}/comments`, {
+    const res = await fetch(`${FRAMEIO_V4}/assets/${assetId}/comments`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 
     if (!res.ok) {
-      console.error('[frameio/comments] V2 failed:', res.status, await res.text())
-      // Fallback to V4
-      res = await fetch(`${FRAMEIO_API_V4}/assets/${assetId}/comments`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    }
-
-    if (!res.ok) {
-      console.error('[frameio/comments] V4 also failed:', res.status, await res.text())
+      console.error('[frameio/comments] V4 failed:', res.status, await res.text())
       return NextResponse.json({ comments: [] })
     }
 

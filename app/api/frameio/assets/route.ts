@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getFrameIoToken, getFrameIoIntegration } from '@/lib/frameio/get-token'
+import { getFrameIoToken } from '@/lib/frameio/get-token'
 
 const FRAMEIO_V4 = 'https://api.frame.io/v4'
 
@@ -17,31 +17,24 @@ async function get(url: string, token: string) {
   }
 }
 
+
 export async function GET(request: NextRequest) {
   const token = await getFrameIoToken()
   if (!token) return NextResponse.json({ error: 'Frame.io not connected' }, { status: 401 })
 
-  const integration = getFrameIoIntegration()
-  const accountId = integration?.accountId
-  if (!accountId) return NextResponse.json({ error: 'Frame.io account not configured' }, { status: 400 })
-
   const { searchParams } = new URL(request.url)
+  const accountId = searchParams.get('accountId')
   const folderId = searchParams.get('folderId')
-  const projectId = searchParams.get('projectId') // fallback only
+  const projectId = searchParams.get('projectId')
 
-  if (!folderId && !projectId) {
-    return NextResponse.json({ error: 'folderId or projectId required' }, { status: 400 })
-  }
+  if (!accountId) return NextResponse.json({ error: 'accountId required' }, { status: 400 })
+  if (!folderId && !projectId) return NextResponse.json({ error: 'folderId or projectId required' }, { status: 400 })
 
   try {
-    let data: any = null
+    let targetFolderId = folderId
 
-    if (folderId) {
-      // Explicit V4 path: /accounts/{accountId}/folders/{folderId}/children
-      data = await get(`${FRAMEIO_V4}/accounts/${accountId}/folders/${folderId}/children`, token)
-      console.log(`[frameio/assets] V4 /folders/${folderId}/children →`, JSON.stringify(data)?.slice(0, 300))
-    } else {
-      // Fallback: resolve root_folder_id from the project listing, then fetch children
+    if (!targetFolderId) {
+      // Resolve root_folder_id from the project listing for this specific account
       const wsData = await get(`${FRAMEIO_V4}/accounts/${accountId}/workspaces`, token)
       const workspaces: any[] = wsData?.data ?? []
 
@@ -52,21 +45,55 @@ export async function GET(request: NextRequest) {
         const rootId = match?.root_folder_id ?? match?.root_asset_id
         if (rootId) {
           console.log(`[frameio/assets] resolved root folder for project ${projectId}: ${rootId}`)
-          data = await get(`${FRAMEIO_V4}/accounts/${accountId}/folders/${rootId}/children`, token)
-          console.log(`[frameio/assets] V4 /folders/${rootId}/children →`, JSON.stringify(data)?.slice(0, 300))
+          targetFolderId = rootId
           break
         }
       }
     }
 
-    const raw: any[] = data?.data ?? (Array.isArray(data) ? data : [])
+    if (!targetFolderId) {
+      return NextResponse.json({ assets: [] })
+    }
+
+    // Step 1: GET /v4/accounts/{accountId}/folders/{folderId}/children — confirmed working V4 path
+    const folderData = await get(
+      `${FRAMEIO_V4}/accounts/${accountId}/folders/${targetFolderId}/children`,
+      token
+    )
+    console.log(`[frameio/assets] GET /folders/children parent_id=${targetFolderId} →`, JSON.stringify(folderData)?.slice(0, 300))
+
+    const raw: any[] = folderData?.data ?? (Array.isArray(folderData) ? folderData : [])
+
+    // Step 2: Attempt to enrich files (non-folders) with comment_count via /memberships
+    const fileIds = raw
+      .filter((a: any) => (a.type ?? a.item_type) !== 'folder')
+      .map((a: any) => a.id)
+
+    const membershipMap = new Map<string, number>()
+
+    if (fileIds.length > 0) {
+      // Build query string filter: filter[asset_id][in][]=id1&filter[asset_id][in][]=id2
+      const filterParams = fileIds.map((id: string) => `filter[asset_id][in][]=${id}`).join('&')
+      const membershipsData = await get(
+        `${FRAMEIO_V4}/accounts/${accountId}/memberships?${filterParams}`,
+        token
+      )
+      console.log(`[frameio/assets] GET /memberships →`, JSON.stringify(membershipsData)?.slice(0, 300))
+
+      const memberships: any[] = membershipsData?.data ?? (Array.isArray(membershipsData) ? membershipsData : [])
+      for (const m of memberships) {
+        if (m.asset_id && m.comment_count != null) {
+          membershipMap.set(m.asset_id, m.comment_count)
+        }
+      }
+    }
 
     const assets = raw.map((a: any) => ({
       id: a.id,
       name: a.name ?? 'Untitled',
       type: (a.type ?? a.item_type ?? 'file') as string,
       insertedAt: a.inserted_at ?? a.uploaded_at ?? null,
-      commentCount: a.comment_count ?? 0,
+      commentCount: membershipMap.get(a.id) ?? a.comment_count ?? 0,
       fps: a.fps ?? 25,
       filesize: a.filesize ?? null,
     }))

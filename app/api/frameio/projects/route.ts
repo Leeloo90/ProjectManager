@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getFrameIoToken, getFrameIoIntegration } from '@/lib/frameio/get-token'
+import { getFrameIoToken } from '@/lib/frameio/get-token'
 
 const FRAMEIO_V4 = 'https://api.frame.io/v4'
 
@@ -24,38 +24,38 @@ export async function GET() {
     return NextResponse.json({ error: 'Frame.io not connected' }, { status: 401 })
   }
 
-  const integration = getFrameIoIntegration()
-  const accountId = integration?.accountId
-
-  if (!accountId) {
-    return NextResponse.json({ error: 'Frame.io account not configured' }, { status: 400 })
-  }
-
   try {
     const allProjects: any[] = []
 
-    // V4: accounts → workspaces → projects (confirmed working)
-    const wsData = await get(`${FRAMEIO_V4}/accounts/${accountId}/workspaces`, token)
-    const workspaces: any[] = wsData?.data ?? []
+    // Step 1: fetch all accounts the token has access to
+    const accountsData = await get(`${FRAMEIO_V4}/accounts`, token)
+    const accounts: any[] = accountsData?.data ?? (Array.isArray(accountsData) ? accountsData : [])
+    console.log(`[frameio/projects] accounts:`, accounts.map((a: any) => `${a.id} (${a.name})`))
 
-    for (const ws of workspaces) {
-      const projData = await get(`${FRAMEIO_V4}/accounts/${accountId}/workspaces/${ws.id}/projects`, token)
-      const projs: any[] = projData?.data ?? []
+    // Step 2: for each account, fetch workspaces → projects
+    for (const account of accounts) {
+      const accountId = account.id
+      const wsData = await get(`${FRAMEIO_V4}/accounts/${accountId}/workspaces`, token)
+      const workspaces: any[] = wsData?.data ?? []
 
-      for (const p of projs) {
-        allProjects.push({
-          id: p.id,
-          name: p.name,
-          updated_at: p.updated_at ?? p.inserted_at ?? null,
-          // V4 field is root_folder_id
-          root_asset_id: p.root_folder_id ?? p.root_asset_id ?? null,
-          account_id: accountId,
-          workspace_id: ws.id,
-        })
-      }
+      for (const ws of workspaces) {
+        const projData = await get(`${FRAMEIO_V4}/accounts/${accountId}/workspaces/${ws.id}/projects`, token)
+        const projs: any[] = projData?.data ?? []
 
-      if (projs.length > 0) {
-        console.log(`[frameio/projects] workspace ${ws.id} first project:`, JSON.stringify(projs[0]))
+        for (const p of projs) {
+          allProjects.push({
+            id: p.id,
+            name: p.name,
+            updated_at: p.updated_at ?? p.inserted_at ?? null,
+            root_asset_id: p.root_folder_id ?? p.root_asset_id ?? null,
+            account_id: accountId,
+            workspace_id: ws.id,
+          })
+        }
+
+        if (projs.length > 0) {
+          console.log(`[frameio/projects] account ${account.name} / workspace ${ws.id}: ${projs.length} project(s)`)
+        }
       }
     }
 

@@ -52,6 +52,7 @@ export const projects = sqliteTable('projects', {
   frameioProjectName: text('frameio_project_name'),
   frameioRootAssetId: text('frameio_root_asset_id'),
   frameioWorkspaceId: text('frameio_workspace_id'),
+  frameioAccountId: text('frameio_account_id'),
   frameioUnreadComments: integer('frameio_unread_comments').default(0),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),

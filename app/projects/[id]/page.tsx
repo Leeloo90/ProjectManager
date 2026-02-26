@@ -29,6 +29,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     frameioProjectId: projects.frameioProjectId,
     frameioProjectName: projects.frameioProjectName,
     frameioRootAssetId: projects.frameioRootAssetId,
+    frameioAccountId: projects.frameioAccountId,
     frameioUnreadComments: projects.frameioUnreadComments,
   })
     .from(projects)

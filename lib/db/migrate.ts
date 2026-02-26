@@ -182,6 +182,7 @@ export function initializeDatabase() {
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_project_name TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_root_asset_id TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_workspace_id TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_account_id TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_unread_comments INTEGER DEFAULT 0`) } catch {}
 
   sqlite.exec(`
