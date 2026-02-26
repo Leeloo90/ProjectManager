@@ -23,18 +23,24 @@ import {
 } from '../actions'
 import {
   Edit, Trash2, Plus, AlertTriangle, ExternalLink, Camera, Package,
-  RotateCcw, FileText, ChevronDown, ChevronUp, Loader2, MapPin
+  RotateCcw, FileText, ChevronDown, ChevronUp, Loader2, MapPin, Clapperboard,
+  Link2Off
 } from 'lucide-react'
 import { PlacesAutocomplete } from '@/components/ui/places-autocomplete'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
+import { LinkProjectModal } from '@/components/frameio/link-project-modal'
+import { unlinkFrameIoProject } from '@/app/frameio/actions'
+import { AssetBrowser } from '@/components/frameio/asset-browser'
 
 type Project = {
   id: string; name: string; status: string; startDate: string; deadline: string;
   includedRevisionRounds: number | null; frameIoLink: string | null; drivefinalsLink: string | null;
   driveArchiveLink: string | null; notes: string | null; invoiceId: string | null;
   productionCompanyId: string; clientId: string; clientName: string | null; companyName: string | null;
+  frameioProjectId: string | null; frameioProjectName: string | null; frameioRootAssetId: string | null; frameioUnreadComments: number | null;
 }
+
 type Deliverable = {
   id: string; name: string; videoLengthSeconds: number; durationBracket: string;
   primaryFormat: string; editType: string; colourGrading: string | null; subtitles: string | null;
@@ -522,9 +528,10 @@ function EditProjectForm({ project, companies, clients, onSave, onClose }: {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function ProjectDetailClient({ project, deliverables: initialDeliverables, shoot: initialShoot, revisions: initialRevisions, pricingMap, settings, companies, clients }: {
+export function ProjectDetailClient({ project, deliverables: initialDeliverables, shoot: initialShoot, revisions: initialRevisions, pricingMap, settings, companies, clients, isFrameioConnected }: {
   project: Project; deliverables: Deliverable[]; shoot: Shoot | null; revisions: Revision[];
-  pricingMap: Record<string, number>; settings: any; companies: any[]; clients: any[]
+  pricingMap: Record<string, number>; settings: any; companies: any[]; clients: any[];
+  isFrameioConnected: boolean;
 }) {
   const { toast } = useToast()
   const router = useRouter()
@@ -539,6 +546,8 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
   const [bulkEditMode, setBulkEditMode] = useState(false)
   const [bulkEdits, setBulkEdits] = useState<Record<string, { name: string; cost: string }>>({})
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [linkFrameioOpen, setLinkFrameioOpen] = useState(false)
+  const [unlinkingFrameio, setUnlinkingFrameio] = useState(false)
 
   const today = format(new Date(), 'yyyy-MM-dd')
   const isLocked = ['invoiced', 'paid'].includes(project.status)
@@ -586,6 +595,17 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
   function cancelBulkEdit() {
     setBulkEditMode(false)
     setBulkEdits({})
+  }
+
+  async function handleUnlinkFrameio() {
+    setUnlinkingFrameio(true)
+    try {
+      await unlinkFrameIoProject(project.id)
+      toast('Frame.io project unlinked')
+      router.refresh()
+    } finally {
+      setUnlinkingFrameio(false)
+    }
   }
 
   function handleStatusChange(newStatus: string) {
@@ -736,6 +756,45 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
           <CardContent><p className="text-sm text-gray-700 whitespace-pre-wrap">{project.notes}</p></CardContent>
         </Card>
       )}
+
+      {/* Frame.io */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clapperboard size={17} />Frame.io
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {project.frameioProjectId ? (
+                <Button size="sm" variant="ghost" onClick={handleUnlinkFrameio} disabled={unlinkingFrameio}
+                  title="Unlink Frame.io project">
+                  <Link2Off size={13} className="text-red-500" />
+                </Button>
+              ) : isFrameioConnected ? (
+                <Button size="sm" variant="outline" onClick={() => setLinkFrameioOpen(true)}>
+                  <Clapperboard size={13} /> Link Project
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!isFrameioConnected ? (
+            <p className="text-sm text-gray-400">
+              Frame.io not connected.{' '}
+              <a href="/settings?tab=integrations" className="text-blue-600 hover:underline">Go to Settings</a> to connect.
+            </p>
+          ) : !project.frameioProjectId ? (
+            <p className="text-sm text-gray-400">No Frame.io project linked. Click "Link Project" to connect one.</p>
+          ) : (
+            <AssetBrowser
+              frameioProjectId={project.frameioProjectId!}
+              rootAssetId={project.frameioRootAssetId}
+              projectName={project.frameioProjectName ?? 'Project'}
+            />
+          )}
+        </CardContent>
+      </Card>
 
       {/* Deliverables */}
       <Card>
@@ -996,6 +1055,12 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
         title="Remove Shoot Details"
         message="Are you sure you want to remove shoot details from this project?"
         confirmLabel="Remove Shoot"
+      />
+
+      <LinkProjectModal
+        appProjectId={project.id}
+        open={linkFrameioOpen}
+        onClose={() => setLinkFrameioOpen(false)}
       />
     </div>
   )

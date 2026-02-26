@@ -178,6 +178,39 @@ export function initializeDatabase() {
   try { sqlite.exec(`ALTER TABLE invoices ADD COLUMN discount_type TEXT DEFAULT 'none'`) } catch {}
   try { sqlite.exec(`ALTER TABLE invoices ADD COLUMN discount_value REAL DEFAULT 0`) } catch {}
   try { sqlite.exec(`ALTER TABLE business_settings ADD COLUMN gmail_refresh_token TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_project_id TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_project_name TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_root_asset_id TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_workspace_id TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_unread_comments INTEGER DEFAULT 0`) } catch {}
+
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS frameio_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      frameio_asset_id TEXT NOT NULL,
+      frameio_asset_name TEXT NOT NULL,
+      frameio_comment_id TEXT NOT NULL UNIQUE,
+      commenter_name TEXT,
+      comment_text TEXT NOT NULL,
+      timecode TEXT,
+      frameio_created_at TEXT,
+      is_read INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS integrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service TEXT NOT NULL UNIQUE,
+      access_token TEXT,
+      refresh_token TEXT,
+      token_expires_at TEXT,
+      account_id TEXT,
+      account_name TEXT,
+      webhook_id TEXT,
+      connected_at TEXT,
+      is_active INTEGER DEFAULT 0
+    );
+  `)
 
   // Seed business settings if not exists
   const settings = sqlite.prepare('SELECT id FROM business_settings WHERE id = ?').get('singleton')

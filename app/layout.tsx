@@ -5,6 +5,8 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { ToastProvider } from '@/components/ui/toast'
 import { initDB } from './init-db'
 import Script from 'next/script'
+import { Suspense } from 'react'
+import { FrameioNotificationBadge } from '@/components/layout/frameio-notification-badge'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -27,7 +29,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         )}
         <ToastProvider>
           <div className="flex min-h-screen">
-            <Sidebar />
+            <Sidebar
+              frameioBadge={
+                <Suspense fallback={null}>
+                  <FrameioNotificationBadge />
+                </Suspense>
+              }
+            />
             <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
               {children}
             </main>
