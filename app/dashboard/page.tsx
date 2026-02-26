@@ -10,6 +10,14 @@ import Link from 'next/link'
 import { AlertTriangle, Clock, FileText, TrendingUp, DollarSign, Calendar } from 'lucide-react'
 import { format, isAfter, isBefore, addDays, startOfMonth, endOfMonth, parseISO } from 'date-fns'
 
+function FolderKanban2({ size, className }: { size: number; className: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </svg>
+  )
+}
+
 async function getDashboardData() {
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
@@ -316,11 +324,3 @@ export default async function DashboardPage() {
   )
 }
 
-// Inline icon since we can't import from lucide with a custom name easily
-function FolderKanban2({ size, className }: { size: number; className: string }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-    </svg>
-  )
-}

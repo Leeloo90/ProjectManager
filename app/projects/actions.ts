@@ -327,3 +327,15 @@ export async function updateRevisionStatus(id: string, projectId: string, status
   await db.update(revisions).set({ status: status as any, updatedAt: new Date().toISOString() }).where(eq(revisions.id, id))
   revalidatePath(`/projects/${projectId}`)
 }
+
+export async function updateDeliverableNameAndCost(deliverableId: string, name: string, calculatedCost: number) {
+  const d = db.select({ projectId: deliverables.projectId }).from(deliverables).where(eq(deliverables.id, deliverableId)).get()
+  await db.update(deliverables)
+    .set({ name, calculatedCost, updatedAt: new Date().toISOString() })
+    .where(eq(deliverables.id, deliverableId))
+  if (d?.projectId) {
+    revalidatePath(`/projects/${d.projectId}`)
+    revalidatePath('/projects')
+    revalidatePath('/dashboard')
+  }
+}

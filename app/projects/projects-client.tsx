@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { formatDate, getStatusBadgeClass, getStatusConfig, ACTIVE_STATUSES, PROJECT_STATUSES } from '@/lib/utils'
+import { formatCurrency, formatDate, getStatusBadgeClass, getStatusConfig, ACTIVE_STATUSES, PROJECT_STATUSES } from '@/lib/utils'
 import { format } from 'date-fns'
 import { ChevronRight, AlertTriangle } from 'lucide-react'
 
@@ -17,9 +17,9 @@ type Project = {
 
 const ALL_STATUSES = ['all', ...PROJECT_STATUSES.map(s => s.key)] as const
 
-export function ProjectsClient({ projects, shootTotals }: {
+export function ProjectsClient({ projects, projectCosts }: {
   projects: Project[]
-  shootTotals: { projectId: string; cost: number | null }[]
+  projectCosts: Record<string, number>
 }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -87,6 +87,7 @@ export function ProjectsClient({ projects, shootTotals }: {
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Deadline</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Company</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500">Value</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -113,6 +114,9 @@ export function ProjectsClient({ projects, shootTotals }: {
                       {formatDate(p.deadline)}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{p.companyName}</td>
+                    <td className="px-4 py-3 text-right text-sm font-medium text-gray-700">
+                      {projectCosts[p.id] ? formatCurrency(projectCosts[p.id]) : <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <Link href={`/projects/${p.id}`}>
                         <Button size="icon" variant="ghost">

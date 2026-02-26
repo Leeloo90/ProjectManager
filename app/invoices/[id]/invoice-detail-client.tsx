@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition } from 'react'
+import React, { useState, useTransition } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -37,6 +37,8 @@ export function InvoiceDetailClient({ invoice, linkedProjects, projectDetails, s
   // Edit dialog state
   const [dialogProjects, setDialogProjects] = useState<DialogProject[]>([])
   const [addProjectId, setAddProjectId] = useState('')
+  const [dialogDiscountType, setDialogDiscountType] = useState<'none' | 'percentage' | 'fixed'>('none')
+  const [dialogDiscountValue, setDialogDiscountValue] = useState(0)
 
   const statusLabels: Record<string, string> = { sent: 'Sent', paid: 'Paid', voided: 'Voided', draft: 'Draft' }
 
@@ -67,6 +69,8 @@ export function InvoiceDetailClient({ invoice, linkedProjects, projectDetails, s
     })
     setDialogProjects(initialProjects)
     setAddProjectId('')
+    setDialogDiscountType((invoice.discountType as 'none' | 'percentage' | 'fixed') || 'none')
+    setDialogDiscountValue(invoice.discountValue ?? 0)
     setEditDialog(true)
   }
 
@@ -94,8 +98,12 @@ export function InvoiceDetailClient({ invoice, linkedProjects, projectDetails, s
   const dialogSubtotal = dialogProjects.reduce((s, p) => s + p.price, 0)
   const dialogVatRate = settings?.vatRate ?? 15
   const dialogIncludeVat = settings?.includeVat ?? true
-  const dialogVatAmount = dialogIncludeVat ? Math.round(dialogSubtotal * dialogVatRate / 100 * 100) / 100 : 0
-  const dialogTotal = dialogSubtotal + dialogVatAmount
+  const dialogDiscountAmount = dialogDiscountType === 'percentage'
+    ? Math.round(dialogSubtotal * dialogDiscountValue / 100 * 100) / 100
+    : dialogDiscountType === 'fixed' ? dialogDiscountValue : 0
+  const dialogDiscountedSubtotal = dialogSubtotal - dialogDiscountAmount
+  const dialogVatAmount = dialogIncludeVat ? Math.round(dialogDiscountedSubtotal * dialogVatRate / 100 * 100) / 100 : 0
+  const dialogTotal = dialogDiscountedSubtotal + dialogVatAmount
 
   const projectsToAdd = availableProjects.filter((p: any) => !dialogProjects.find(dp => dp.id === p.id))
 
@@ -127,6 +135,8 @@ export function InvoiceDetailClient({ invoice, linkedProjects, projectDetails, s
       if (!fd.getAll('projectIds').includes(p.id)) fd.append('projectIds', p.id)
       fd.set(`priceOverride_${p.id}`, String(p.price))
     })
+    fd.set('discountType', dialogDiscountType)
+    fd.set('discountValue', String(dialogDiscountValue))
     startTransition(async () => {
       await updateInvoice(invoice.id, fd)
       toast('Invoice updated')
@@ -232,35 +242,44 @@ export function InvoiceDetailClient({ invoice, linkedProjects, projectDetails, s
                     const projectTotal = getProjectTotal(p.id, details)
                     const isOverridden = lineItemOverrides[p.id] !== undefined
                     return (
-                      <>
+                      <React.Fragment key={p.id}>
                         <tr key={`${p.id}-header`} className="border-t border-gray-100">
                           <td colSpan={2} className="py-3 font-semibold text-gray-900">{p.name} <span className="text-gray-400 font-normal text-xs">— {p.clientName}</span></td>
                         </tr>
-                        {!isOverridden && details.deliverables.map((d: any) => (
+                        {details.deliverables.map((d) => (
                           <tr key={d.id}>
                             <td className="py-1.5 pl-4 text-gray-600">
                               {d.name}
                               <span className="block text-xs text-gray-400">
-                                {getBracketLabel(d.durationBracket)} · {d.primaryFormat} · {d.editType === 'colour_only' ? 'Colour Only' : d.editType === 'basic' ? 'Basic Edit' : 'Advanced Edit'}
-                                {d.additionalFormats ? ` · ${d.additionalFormats} extra format(s)` : ''}
+                                {[
+                                  getBracketLabel(d.durationBracket),
+                                  d.primaryFormat,
+                                  d.editType === 'colour_only' ? 'Colour Only' : d.editType === 'basic' ? 'Basic Edit' : 'Advanced Edit',
+                                  d.colourGrading && d.colourGrading !== 'none' ? (d.colourGrading === 'standard' ? 'Standard Grade' : 'Advanced Grade') : null,
+                                  d.subtitles && d.subtitles !== 'none' ? (d.subtitles === 'basic' ? 'Basic Subtitles' : 'Styled Subtitles') : null,
+                                  d.additionalFormats ? `${d.additionalFormats} extra format(s)` : null,
+                                  d.rushFeeType && d.rushFeeType !== 'none' ? (d.rushFeeType === 'standard' ? 'Rush: Standard' : 'Rush: Emergency') : null,
+                                  d.hasCustomMusic ? 'Custom Music' : null,
+                                  d.hasCustomGraphics ? 'Custom Graphics' : null,
+                                ].filter(Boolean).join(' · ')}
                               </span>
                             </td>
-                            <td className="py-1.5 text-right text-gray-700">{formatCurrency(d.calculatedCost)}</td>
+                            <td className="py-1.5 text-right text-gray-700">{!isOverridden && formatCurrency(d.calculatedCost)}</td>
                           </tr>
                         ))}
-                        {!isOverridden && details.shoot && (
+                        {details.shoot && (
                           <tr key={`${p.id}-shoot`}>
                             <td className="py-1.5 pl-4 text-gray-600">
                               Shoot ({details.shoot.shootType === 'half_day' ? 'Half Day' : 'Full Day'} · {details.shoot.cameraBody === 'a7siii' ? 'Sony a7SIII' : 'Sony a7III'})
                             </td>
-                            <td className="py-1.5 text-right text-gray-700">{formatCurrency(details.shoot.calculatedShootCost)}</td>
+                            <td className="py-1.5 text-right text-gray-700">{!isOverridden && formatCurrency(details.shoot.calculatedShootCost)}</td>
                           </tr>
                         )}
                         <tr key={`${p.id}-subtotal`} className="border-t border-gray-100">
-                          <td className="py-2 pl-4 text-gray-500 text-xs">{isOverridden ? 'Custom Rate' : 'Project Subtotal'}</td>
+                          <td className="py-2 pl-4 text-gray-500 text-xs">Project Subtotal</td>
                           <td className="py-2 text-right font-medium text-gray-800">{formatCurrency(projectTotal)}</td>
                         </tr>
-                      </>
+                      </React.Fragment>
                     )
                   })}
                 </tbody>
@@ -269,6 +288,17 @@ export function InvoiceDetailClient({ invoice, linkedProjects, projectDetails, s
                     <td className="py-3 font-semibold text-gray-900">Subtotal</td>
                     <td className="py-3 text-right font-semibold text-gray-900">{formatCurrency(invoice.subtotal)}</td>
                   </tr>
+                  {invoice.discountType && invoice.discountType !== 'none' && invoice.discountValue > 0 && (() => {
+                    const amt = invoice.discountType === 'percentage'
+                      ? Math.round(invoice.subtotal * invoice.discountValue / 100 * 100) / 100
+                      : invoice.discountValue
+                    return (
+                      <tr>
+                        <td className="py-2 text-gray-600">Discount {invoice.discountType === 'percentage' ? `(${invoice.discountValue}%)` : '(fixed)'}</td>
+                        <td className="py-2 text-right text-green-700">-{formatCurrency(amt)}</td>
+                      </tr>
+                    )
+                  })()}
                   {invoice.vatAmount > 0 && (
                     <tr>
                       <td className="py-2 text-gray-600">VAT ({settings?.vatRate ?? 15}%)</td>
@@ -357,25 +387,57 @@ export function InvoiceDetailClient({ invoice, linkedProjects, projectDetails, s
             </div>
 
             {/* Add project dropdown */}
-            {projectsToAdd.length > 0 && (
-              <div className="flex gap-2 mt-3">
-                <Select
-                  value={addProjectId}
-                  onChange={e => setAddProjectId(e.target.value)}
+            <div className="flex gap-2 mt-3">
+              {projectsToAdd.length > 0 ? (
+                <>
+                  <Select
+                    value={addProjectId}
+                    onChange={e => setAddProjectId(e.target.value)}
+                    className="flex-1"
+                  >
+                    <option value="">Add a project...</option>
+                    {projectsToAdd.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}{p.clientName ? ` — ${p.clientName}` : ''} ({formatCurrency(availableProjectCosts[p.id] ?? 0)})
+                      </option>
+                    ))}
+                  </Select>
+                  <Button type="button" variant="outline" onClick={addDialogProject} disabled={!addProjectId}>
+                    <Plus size={15} /> Add
+                  </Button>
+                </>
+              ) : (
+                <p className="text-xs text-gray-400 italic">No other finished projects available for this company.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Discount */}
+          <div>
+            <Label>Discount (optional)</Label>
+            <div className="flex gap-2">
+              <select
+                value={dialogDiscountType}
+                onChange={e => { setDialogDiscountType(e.target.value as 'none' | 'percentage' | 'fixed'); setDialogDiscountValue(0) }}
+                className="flex h-10 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]"
+              >
+                <option value="none">No discount</option>
+                <option value="percentage">Percentage (%)</option>
+                <option value="fixed">Fixed amount (ZAR)</option>
+              </select>
+              {dialogDiscountType !== 'none' && (
+                <Input
+                  type="number"
+                  min="0"
+                  step={dialogDiscountType === 'percentage' ? '0.1' : '1'}
+                  max={dialogDiscountType === 'percentage' ? '100' : undefined}
+                  value={dialogDiscountValue}
+                  onChange={e => setDialogDiscountValue(parseFloat(e.target.value) || 0)}
+                  placeholder={dialogDiscountType === 'percentage' ? 'e.g. 10' : 'e.g. 500'}
                   className="flex-1"
-                >
-                  <option value="">Add a project...</option>
-                  {projectsToAdd.map((p: any) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}{p.clientName ? ` — ${p.clientName}` : ''} ({formatCurrency(availableProjectCosts[p.id] ?? 0)})
-                    </option>
-                  ))}
-                </Select>
-                <Button type="button" variant="outline" onClick={addDialogProject} disabled={!addProjectId}>
-                  <Plus size={15} /> Add
-                </Button>
-              </div>
-            )}
+                />
+              )}
+            </div>
           </div>
 
           {/* Running total preview */}
@@ -384,6 +446,12 @@ export function InvoiceDetailClient({ invoice, linkedProjects, projectDetails, s
               <span>Subtotal</span>
               <span>{formatCurrency(dialogSubtotal)}</span>
             </div>
+            {dialogDiscountAmount > 0 && (
+              <div className="flex justify-between text-green-700">
+                <span>Discount {dialogDiscountType === 'percentage' ? `(${dialogDiscountValue}%)` : '(fixed)'}</span>
+                <span>-{formatCurrency(dialogDiscountAmount)}</span>
+              </div>
+            )}
             {dialogIncludeVat && (
               <div className="flex justify-between text-gray-600">
                 <span>VAT ({dialogVatRate}%)</span>

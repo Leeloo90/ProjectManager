@@ -143,6 +143,8 @@ export const invoices = sqliteTable('invoices', {
   paymentMethod: text('payment_method'),
   paymentReference: text('payment_reference'),
   lineItemOverrides: text('line_item_overrides'),
+  discountType: text('discount_type', { enum: ['none', 'percentage', 'fixed'] }).default('none'),
+  discountValue: real('discount_value').default(0),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
 })

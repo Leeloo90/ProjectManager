@@ -24,6 +24,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     paymentMethod: invoices.paymentMethod,
     paymentReference: invoices.paymentReference,
     lineItemOverrides: invoices.lineItemOverrides,
+    discountType: invoices.discountType,
+    discountValue: invoices.discountValue,
     productionCompanyId: invoices.productionCompanyId,
     companyName: productionCompanies.name,
     billingAddress: productionCompanies.billingAddress,

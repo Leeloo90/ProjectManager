@@ -10,6 +10,7 @@ import { updateBusinessSettings, updateAllPricing } from './actions'
 import { useRouter } from 'next/navigation'
 import { DURATION_BRACKETS } from '@/lib/utils'
 import { Save } from 'lucide-react'
+import { PlacesAutocomplete } from '@/components/ui/places-autocomplete'
 
 type PricingConfig = { id: string; configKey: string; configValue: number; label: string; category: string }
 
@@ -75,6 +76,7 @@ export function SettingsClient({ settings: initialSettings, pricing: initialPric
   const [pending, startTransition] = useTransition()
   const [pricingPending, startPricingTransition] = useTransition()
   const [activeTab, setActiveTab] = useState<'business' | 'pricing' | 'addons' | 'shoot'>('business')
+  const [baseLocationMap, setBaseLocationMap] = useState<string>(initialSettings?.baseLocation ?? '')
 
   // Build mutable pricing map
   const [pricingValues, setPricingValues] = useState<Record<string, number>>(
@@ -196,7 +198,21 @@ export function SettingsClient({ settings: initialSettings, pricing: initialPric
             <CardContent className="space-y-4">
               <div>
                 <Label>Base Location (for travel calculation)</Label>
-                <Input name="baseLocation" defaultValue={initialSettings?.baseLocation ?? ''} placeholder="e.g. Johannesburg, Gauteng" />
+                <PlacesAutocomplete
+                  name="baseLocation"
+                  defaultValue={initialSettings?.baseLocation ?? ''}
+                  placeholder="e.g. Johannesburg, Gauteng"
+                  onSelect={addr => setBaseLocationMap(addr)}
+                />
+                {baseLocationMap && process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && (
+                  <div className="mt-2 rounded-lg overflow-hidden border border-gray-200">
+                    <img
+                      src={`https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(baseLocationMap)}&zoom=13&size=600x160&markers=color:0x1e3a5f|${encodeURIComponent(baseLocationMap)}&scale=2&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`}
+                      alt="Base location map"
+                      className="w-full"
+                    />
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

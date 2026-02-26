@@ -28,6 +28,8 @@ export function NewInvoiceClient({ finishedProjects, companies, projectCosts, se
   const [selectedCompanyId, setSelectedCompanyId] = useState('')
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
   const [projectPrices, setProjectPrices] = useState<Record<string, number>>({})
+  const [discountType, setDiscountType] = useState<'none' | 'percentage' | 'fixed'>('none')
+  const [discountValue, setDiscountValue] = useState(0)
 
   const today = format(new Date(), 'yyyy-MM-dd')
   const defaultDue = format(addDays(new Date(), 30), 'yyyy-MM-dd')
@@ -36,8 +38,12 @@ export function NewInvoiceClient({ finishedProjects, companies, projectCosts, se
   const subtotal = selectedProjectIds.reduce((sum, id) => sum + (projectPrices[id] ?? projectCosts[id] ?? 0), 0)
   const vatRate = settings?.vatRate ?? 15
   const includeVat = settings?.includeVat ?? true
-  const vatAmount = includeVat ? Math.round(subtotal * vatRate / 100 * 100) / 100 : 0
-  const total = subtotal + vatAmount
+  const discountAmount = discountType === 'percentage'
+    ? Math.round(subtotal * discountValue / 100 * 100) / 100
+    : discountType === 'fixed' ? discountValue : 0
+  const discountedSubtotal = subtotal - discountAmount
+  const vatAmount = includeVat ? Math.round(discountedSubtotal * vatRate / 100 * 100) / 100 : 0
+  const total = discountedSubtotal + vatAmount
 
   function toggleProject(id: string) {
     setSelectedProjectIds(prev => {
@@ -68,6 +74,8 @@ export function NewInvoiceClient({ finishedProjects, companies, projectCosts, se
       fd.append(`priceOverride_${id}`, String(projectPrices[id] ?? projectCosts[id] ?? 0))
     })
     fd.set('productionCompanyId', selectedCompanyId)
+    fd.set('discountType', discountType)
+    fd.set('discountValue', String(discountValue))
     startTransition(async () => {
       const invoiceId = await createInvoice(fd)
       toast('Invoice created')
@@ -163,12 +171,46 @@ export function NewInvoiceClient({ finishedProjects, companies, projectCosts, se
               <Input name="poReference" placeholder="Purchase order or reference number from client" />
             </div>
 
+            {/* Discount */}
+            <div>
+              <Label>Discount (optional)</Label>
+              <div className="flex gap-2">
+                <select
+                  value={discountType}
+                  onChange={e => { setDiscountType(e.target.value as 'none' | 'percentage' | 'fixed'); setDiscountValue(0) }}
+                  className="flex h-10 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]"
+                >
+                  <option value="none">No discount</option>
+                  <option value="percentage">Percentage (%)</option>
+                  <option value="fixed">Fixed amount (ZAR)</option>
+                </select>
+                {discountType !== 'none' && (
+                  <Input
+                    type="number"
+                    min="0"
+                    step={discountType === 'percentage' ? '0.1' : '1'}
+                    max={discountType === 'percentage' ? '100' : undefined}
+                    value={discountValue}
+                    onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)}
+                    placeholder={discountType === 'percentage' ? 'e.g. 10' : 'e.g. 500'}
+                    className="flex-1"
+                  />
+                )}
+              </div>
+            </div>
+
             {/* Summary */}
             <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">Subtotal</span>
                 <span className="font-medium">{formatCurrency(subtotal)}</span>
               </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-green-700">
+                  <span>Discount {discountType === 'percentage' ? `(${discountValue}%)` : '(fixed)'}</span>
+                  <span>-{formatCurrency(discountAmount)}</span>
+                </div>
+              )}
               {includeVat && (
                 <div className="flex justify-between">
                   <span className="text-gray-600">VAT ({vatRate}%)</span>

@@ -28,14 +28,23 @@ export default async function ProjectsPage() {
     .all()
 
   // Get total costs per project
-  const deliverableTotals = await db.select({
+  const deliverableCosts = await db.select({
     projectId: deliverables.projectId,
+    cost: deliverables.calculatedCost,
   }).from(deliverables).all()
 
   const shootTotals = await db.select({
     projectId: shootDetails.projectId,
     cost: shootDetails.calculatedShootCost,
   }).from(shootDetails).all()
+
+  const projectCosts: Record<string, number> = {}
+  for (const d of deliverableCosts) {
+    projectCosts[d.projectId] = (projectCosts[d.projectId] ?? 0) + d.cost
+  }
+  for (const s of shootTotals) {
+    projectCosts[s.projectId] = (projectCosts[s.projectId] ?? 0) + (s.cost ?? 0)
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -47,7 +56,7 @@ export default async function ProjectsPage() {
           </Link>
         }
       />
-      <ProjectsClient projects={allProjects} shootTotals={shootTotals} />
+      <ProjectsClient projects={allProjects} projectCosts={projectCosts} />
     </div>
   )
 }

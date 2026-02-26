@@ -18,12 +18,14 @@ import {
   updateProject, updateProjectStatus, deleteProject,
   saveDeliverable, deleteDeliverable,
   saveShootDetails, deleteShootDetails,
-  addRevision, updateRevisionStatus, calculateDeliverableCost
+  addRevision, updateRevisionStatus, calculateDeliverableCost,
+  updateDeliverableNameAndCost
 } from '../actions'
 import {
   Edit, Trash2, Plus, AlertTriangle, ExternalLink, Camera, Package,
-  RotateCcw, FileText, ChevronDown, ChevronUp, Loader2
+  RotateCcw, FileText, ChevronDown, ChevronUp, Loader2, MapPin
 } from 'lucide-react'
+import { PlacesAutocomplete } from '@/components/ui/places-autocomplete'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 
@@ -232,6 +234,7 @@ function DeliverableForm({ deliverable, pricingMap, onSave, onClose }: {
 function ShootForm({ shoot, settings, onSave, onClose }: {
   shoot?: Shoot | null; settings: any; onSave: (fd: FormData) => void; onClose: () => void
 }) {
+  const { toast } = useToast()
   const [pending, startTransition] = useTransition()
   const [travelMethod, setTravelMethod] = useState(shoot?.travelMethod ?? 'none')
   const [hasSecondShooter, setHasSecondShooter] = useState(!!shoot?.hasSecondShooter)
@@ -241,6 +244,28 @@ function ShootForm({ shoot, settings, onSave, onClose }: {
   const [extraEquipment, setExtraEquipment] = useState<{ name: string; cost: string }[]>(
     shoot?.additionalEquipment ? JSON.parse(shoot.additionalEquipment) : []
   )
+  const [locationAddress, setLocationAddress] = useState(shoot?.shootLocation ?? '')
+  const [distanceKm, setDistanceKm] = useState(shoot?.distanceKm?.toString() ?? '')
+  const [calculatingDistance, setCalculatingDistance] = useState(false)
+
+  async function handleCalculateDistance() {
+    if (!locationAddress.trim()) return
+    setCalculatingDistance(true)
+    try {
+      const res = await fetch(`/api/maps/distance?destination=${encodeURIComponent(locationAddress)}`)
+      const data = await res.json()
+      if (data.distanceKm) {
+        setDistanceKm(String(Math.ceil(data.distanceKm)))
+        toast(`Distance: ${data.text ?? data.distanceKm + ' km'}`)
+      } else {
+        const msg = data.details ? `${data.error}: ${data.details}` : (data.error ?? 'Could not calculate distance')
+        toast(msg, 'error')
+      }
+    } catch {
+      toast('Could not reach the distance API', 'error')
+    }
+    setCalculatingDistance(false)
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -336,14 +361,39 @@ function ShootForm({ shoot, settings, onSave, onClose }: {
       {travelMethod !== 'none' && (
         <div>
           <Label>Shoot Location</Label>
-          <Input name="shootLocation" defaultValue={shoot?.shootLocation ?? ''} placeholder="Address or description" />
+          <PlacesAutocomplete
+            name="shootLocation"
+            defaultValue={shoot?.shootLocation ?? ''}
+            placeholder="Start typing an address..."
+            onSelect={addr => setLocationAddress(addr)}
+            onChange={val => setLocationAddress(val)}
+          />
         </div>
       )}
 
       {travelMethod === 'driving' && (
         <div>
           <Label>Driving Distance (km one way)</Label>
-          <Input name="distanceKm" type="number" min="0" step="0.1" defaultValue={shoot?.distanceKm ?? ''} />
+          <div className="flex gap-2">
+            <Input
+              name="distanceKm"
+              type="number"
+              min="0"
+              step="0.1"
+              value={distanceKm}
+              onChange={e => setDistanceKm(e.target.value)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCalculateDistance}
+              disabled={!locationAddress.trim() || calculatingDistance}
+              className="shrink-0"
+              title="Calculate distance from your base location"
+            >
+              {calculatingDistance ? <Loader2 size={14} className="animate-spin" /> : <><MapPin size={14} /> Calculate</>}
+            </Button>
+          </div>
           <p className="text-xs text-gray-400 mt-1">Cost = distance × 2 (return) × per-km rate (set in Settings)</p>
         </div>
       )}
@@ -486,6 +536,9 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
   const [deleteDeliverableId, setDeleteDeliverableId] = useState<string | null>(null)
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState(false)
   const [deleteShootConfirm, setDeleteShootConfirm] = useState(false)
+  const [bulkEditMode, setBulkEditMode] = useState(false)
+  const [bulkEdits, setBulkEdits] = useState<Record<string, { name: string; cost: string }>>({})
+  const [bulkSaving, setBulkSaving] = useState(false)
 
   const today = format(new Date(), 'yyyy-MM-dd')
   const isLocked = ['invoiced', 'paid'].includes(project.status)
@@ -503,6 +556,36 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
   function checkPriceMismatch(d: Deliverable): boolean {
     // simplified check — if pricing config changed
     return false // would require re-calculation
+  }
+
+  function enterBulkEdit() {
+    const initial: Record<string, { name: string; cost: string }> = {}
+    for (const d of initialDeliverables) {
+      initial[d.id] = { name: d.name, cost: String(d.calculatedCost) }
+    }
+    setBulkEdits(initial)
+    setBulkEditMode(true)
+  }
+
+  async function saveBulkEdits() {
+    setBulkSaving(true)
+    for (const d of initialDeliverables) {
+      const edit = bulkEdits[d.id]
+      if (!edit) continue
+      const newName = edit.name.trim() || d.name
+      const newCost = parseFloat(edit.cost) || 0
+      if (newName !== d.name || newCost !== d.calculatedCost) {
+        await updateDeliverableNameAndCost(d.id, newName, newCost)
+      }
+    }
+    setBulkSaving(false)
+    setBulkEditMode(false)
+    router.refresh()
+  }
+
+  function cancelBulkEdit() {
+    setBulkEditMode(false)
+    setBulkEdits({})
   }
 
   function handleStatusChange(newStatus: string) {
@@ -659,11 +742,26 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2"><Package size={17} />Deliverables</CardTitle>
-            {!isLocked && (
-              <Button size="sm" onClick={() => setDeliverableDialog({ open: true })}>
-                <Plus size={14} /> Add Deliverable
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {!isLocked && !bulkEditMode && initialDeliverables.length > 0 && (
+                <Button size="sm" variant="outline" onClick={enterBulkEdit}>
+                  <Edit size={14} /> Edit
+                </Button>
+              )}
+              {bulkEditMode && (
+                <>
+                  <Button size="sm" variant="outline" onClick={cancelBulkEdit} disabled={bulkSaving}>Cancel</Button>
+                  <Button size="sm" onClick={saveBulkEdits} disabled={bulkSaving}>
+                    {bulkSaving ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : 'Save'}
+                  </Button>
+                </>
+              )}
+              {!isLocked && !bulkEditMode && (
+                <Button size="sm" onClick={() => setDeliverableDialog({ open: true })}>
+                  <Plus size={14} /> Add Deliverable
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -675,7 +773,15 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
                 <div key={d.id} className="px-6 py-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                      <p className="font-medium text-gray-900">{d.name}</p>
+                      {bulkEditMode ? (
+                        <Input
+                          value={bulkEdits[d.id]?.name ?? d.name}
+                          onChange={e => setBulkEdits(prev => ({ ...prev, [d.id]: { ...prev[d.id], name: e.target.value } }))}
+                          className="font-medium h-8 mb-1"
+                        />
+                      ) : (
+                        <p className="font-medium text-gray-900">{d.name}</p>
+                      )}
                       <p className="text-xs text-gray-500 mt-0.5">
                         {getBracketLabel(d.durationBracket)} · {d.primaryFormat} · {d.editType === 'colour_only' ? 'Colour Only' : d.editType === 'basic' ? 'Basic Edit' : 'Advanced Edit'}
                         {d.colourGrading && d.colourGrading !== 'none' && ` · ${d.colourGrading} grading`}
@@ -686,8 +792,19 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
                       {d.notes && <p className="text-xs text-gray-400 mt-1">{d.notes}</p>}
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <span className="font-semibold text-gray-900">{formatCurrency(d.calculatedCost)}</span>
-                      {!isLocked && (
+                      {bulkEditMode ? (
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={bulkEdits[d.id]?.cost ?? String(d.calculatedCost)}
+                          onChange={e => setBulkEdits(prev => ({ ...prev, [d.id]: { ...prev[d.id], cost: e.target.value } }))}
+                          className="w-28 text-right h-8 font-semibold"
+                        />
+                      ) : (
+                        <span className="font-semibold text-gray-900">{formatCurrency(d.calculatedCost)}</span>
+                      )}
+                      {!isLocked && !bulkEditMode && (
                         <>
                           <Button size="icon" variant="ghost" onClick={() => setDeliverableDialog({ open: true, deliverable: d })}>
                             <Edit size={14} />

@@ -11,12 +11,16 @@ function computeProjectCost(projectId: string): number {
   return deliv.reduce((s, d) => s + d.cost, 0) + (shoot?.cost ?? 0)
 }
 
-function computeVat(subtotal: number) {
+function computeTotals(rawSubtotal: number, discountType: string, discountValue: number) {
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 'singleton')).get()
   const vatRate = settings?.vatRate ?? 15
   const includeVat = settings?.includeVat ?? true
-  const vatAmount = includeVat ? Math.round(subtotal * vatRate / 100 * 100) / 100 : 0
-  return { vatAmount, total: subtotal + vatAmount }
+  const discountAmount = discountType === 'percentage'
+    ? Math.round(rawSubtotal * discountValue / 100 * 100) / 100
+    : discountType === 'fixed' ? discountValue : 0
+  const discountedSubtotal = rawSubtotal - discountAmount
+  const vatAmount = includeVat ? Math.round(discountedSubtotal * vatRate / 100 * 100) / 100 : 0
+  return { vatAmount, total: discountedSubtotal + vatAmount }
 }
 
 export async function createInvoice(formData: FormData) {
@@ -44,6 +48,8 @@ export async function createInvoice(formData: FormData) {
   const dueDate = formData.get('dueDate') as string
   const poReference = formData.get('poReference') as string || null
   const projectIds = formData.getAll('projectIds') as string[]
+  const discountType = (formData.get('discountType') as string) || 'none'
+  const discountValue = parseFloat(formData.get('discountValue') as string) || 0
 
   const lineItemOverrides: Record<string, number> = {}
   let subtotal = 0
@@ -55,7 +61,7 @@ export async function createInvoice(formData: FormData) {
   }
 
   subtotal = Math.round(subtotal * 100) / 100
-  const { vatAmount, total } = computeVat(subtotal)
+  const { vatAmount, total } = computeTotals(subtotal, discountType, discountValue)
   const invoiceId = generateId()
 
   await db.insert(invoices).values({
@@ -70,6 +76,8 @@ export async function createInvoice(formData: FormData) {
     vatAmount,
     total: Math.round(total * 100) / 100,
     lineItemOverrides: JSON.stringify(lineItemOverrides),
+    discountType: discountType as 'none' | 'percentage' | 'fixed',
+    discountValue,
   })
 
   for (const pid of projectIds) {
@@ -153,6 +161,9 @@ export async function updateInvoice(invoiceId: string, formData: FormData) {
       .where(eq(projects.id, pid))
   }
 
+  const discountType = (formData.get('discountType') as string) || 'none'
+  const discountValue = parseFloat(formData.get('discountValue') as string) || 0
+
   const lineItemOverrides: Record<string, number> = {}
   let subtotal = 0
   for (const pid of newProjectIds) {
@@ -163,13 +174,15 @@ export async function updateInvoice(invoiceId: string, formData: FormData) {
   }
 
   subtotal = Math.round(subtotal * 100) / 100
-  const { vatAmount, total } = computeVat(subtotal)
+  const { vatAmount, total } = computeTotals(subtotal, discountType, discountValue)
 
   await db.update(invoices).set({
     invoiceDate,
     dueDate,
     poReference,
     lineItemOverrides: JSON.stringify(lineItemOverrides),
+    discountType: discountType as 'none' | 'percentage' | 'fixed',
+    discountValue,
     subtotal,
     vatAmount,
     total: Math.round(total * 100) / 100,

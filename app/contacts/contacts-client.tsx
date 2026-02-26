@@ -153,32 +153,28 @@ export function ContactsClient({ companies, clients }: { companies: Company[]; c
     c.name.toLowerCase().includes(search.toLowerCase())
   )
 
-  function handleSaveCompany(fd: FormData) {
-    startTransition(async () => {
-      if (companyDialog.company) {
-        await updateProductionCompany(companyDialog.company.id, fd)
-        toast('Company updated')
-      } else {
-        await createProductionCompany(fd)
-        toast('Company created')
-      }
-      setCompanyDialog({ open: false })
-      router.refresh()
-    })
+  async function handleSaveCompany(fd: FormData) {
+    if (companyDialog.company) {
+      await updateProductionCompany(companyDialog.company.id, fd)
+      toast('Company updated')
+    } else {
+      await createProductionCompany(fd)
+      toast('Company created')
+    }
+    setCompanyDialog({ open: false })
+    router.refresh()
   }
 
-  function handleSaveClient(fd: FormData) {
-    startTransition(async () => {
-      if (clientDialog.client) {
-        await updateClient(clientDialog.client.id, fd)
-        toast('Client updated')
-      } else {
-        await createClient(fd)
-        toast('Client created')
-      }
-      setClientDialog({ open: false })
-      router.refresh()
-    })
+  async function handleSaveClient(fd: FormData) {
+    if (clientDialog.client) {
+      await updateClient(clientDialog.client.id, fd)
+      toast('Client updated')
+    } else {
+      await createClient(fd)
+      toast('Client created')
+    }
+    setClientDialog({ open: false })
+    router.refresh()
   }
 
   function handleToggleActive(id: string, current: boolean) {

@@ -102,32 +102,39 @@ export function InvoicePDF({ invoice, linkedProjects, projectDetails, settings, 
                     </Text>
                   </View>
 
-                  {!isOverridden && details.deliverables.map((d) => (
+                  {details.deliverables.map((d) => (
                     <View key={d.id} style={s.lineRow}>
                       <View style={{ flex: 1 }}>
                         <Text style={{ color: '#374151' }}>{d.name}</Text>
                         <Text style={s.lineDetail}>
-                          {getBracketLabel(d.durationBracket)} · {d.primaryFormat} · {
-                            d.editType === 'colour_only' ? 'Colour Only' :
-                            d.editType === 'basic' ? 'Basic Edit' : 'Advanced Edit'
-                          }{d.additionalFormats ? ` · ${d.additionalFormats} extra format(s)` : ''}
+                          {[
+                            getBracketLabel(d.durationBracket),
+                            d.primaryFormat,
+                            d.editType === 'colour_only' ? 'Colour Only' : d.editType === 'basic' ? 'Basic Edit' : 'Advanced Edit',
+                            d.colourGrading && d.colourGrading !== 'none' ? (d.colourGrading === 'standard' ? 'Standard Grade' : 'Advanced Grade') : null,
+                            d.subtitles && d.subtitles !== 'none' ? (d.subtitles === 'basic' ? 'Basic Subtitles' : 'Styled Subtitles') : null,
+                            d.additionalFormats ? `${d.additionalFormats} extra format(s)` : null,
+                            d.rushFeeType && d.rushFeeType !== 'none' ? (d.rushFeeType === 'standard' ? 'Rush: Standard' : 'Rush: Emergency') : null,
+                            d.hasCustomMusic ? 'Custom Music' : null,
+                            d.hasCustomGraphics ? 'Custom Graphics' : null,
+                          ].filter(Boolean).join(' · ')}
                         </Text>
                       </View>
-                      <Text style={{ color: '#374151' }}>{formatCurrency(d.calculatedCost)}</Text>
+                      {!isOverridden && <Text style={{ color: '#374151' }}>{formatCurrency(d.calculatedCost)}</Text>}
                     </View>
                   ))}
 
-                  {!isOverridden && details.shoot && (
+                  {details.shoot && (
                     <View style={s.lineRow}>
                       <Text style={{ flex: 1, color: '#374151' }}>
                         Shoot ({details.shoot.shootType === 'half_day' ? 'Half Day' : 'Full Day'} · {details.shoot.cameraBody === 'a7siii' ? 'Sony a7SIII' : 'Sony a7III'})
                       </Text>
-                      <Text style={{ color: '#374151' }}>{formatCurrency(details.shoot.calculatedShootCost)}</Text>
+                      {!isOverridden && <Text style={{ color: '#374151' }}>{formatCurrency(details.shoot.calculatedShootCost)}</Text>}
                     </View>
                   )}
 
                   <View style={s.subtotalRow}>
-                    <Text style={[s.muted, { flex: 1, paddingLeft: 12 }]}>{isOverridden ? 'Custom Rate' : 'Project Subtotal'}</Text>
+                    <Text style={[s.muted, { flex: 1, paddingLeft: 12 }]}>Project Subtotal</Text>
                     <Text style={[s.bold, { color: '#374151' }]}>{formatCurrency(projectTotal)}</Text>
                   </View>
                 </View>
@@ -139,6 +146,20 @@ export function InvoicePDF({ invoice, linkedProjects, projectDetails, settings, 
             <Text style={[s.bold, { flex: 1, color: '#374151' }]}>Subtotal</Text>
             <Text style={[s.bold, { color: '#374151' }]}>{formatCurrency(invoice.subtotal)}</Text>
           </View>
+
+          {invoice.discountType && invoice.discountType !== 'none' && invoice.discountValue > 0 && (() => {
+            const amt = invoice.discountType === 'percentage'
+              ? Math.round(invoice.subtotal * invoice.discountValue / 100 * 100) / 100
+              : invoice.discountValue
+            return (
+              <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
+                <Text style={[s.muted, { flex: 1 }]}>
+                  Discount {invoice.discountType === 'percentage' ? `(${invoice.discountValue}%)` : '(fixed)'}
+                </Text>
+                <Text style={[s.muted, { color: '#15803d' }]}>-{formatCurrency(amt)}</Text>
+              </View>
+            )
+          })()}
 
           {invoice.vatAmount > 0 && (
             <View style={{ flexDirection: 'row', paddingVertical: 4 }}>

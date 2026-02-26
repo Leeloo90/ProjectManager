@@ -28,7 +28,8 @@ export async function GET(req: NextRequest) {
     const data = await res.json()
 
     if (data.status !== 'OK') {
-      return NextResponse.json({ error: 'Maps API error', details: data.status }, { status: 400 })
+      console.error('[distance] Google Maps error:', data.status, data.error_message)
+      return NextResponse.json({ error: 'Maps API error', details: data.status, message: data.error_message }, { status: 400 })
     }
 
     const element = data.rows?.[0]?.elements?.[0]
