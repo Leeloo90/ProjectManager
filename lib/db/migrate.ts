@@ -177,6 +177,7 @@ export function initializeDatabase() {
   try { sqlite.exec(`ALTER TABLE invoices ADD COLUMN line_item_overrides TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE invoices ADD COLUMN discount_type TEXT DEFAULT 'none'`) } catch {}
   try { sqlite.exec(`ALTER TABLE invoices ADD COLUMN discount_value REAL DEFAULT 0`) } catch {}
+  try { sqlite.exec(`ALTER TABLE business_settings ADD COLUMN gmail_refresh_token TEXT`) } catch {}
 
   // Seed business settings if not exists
   const settings = sqlite.prepare('SELECT id FROM business_settings WHERE id = ?').get('singleton')

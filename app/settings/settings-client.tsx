@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,7 +9,7 @@ import { useToast } from '@/components/ui/toast'
 import { updateBusinessSettings, updateAllPricing } from './actions'
 import { useRouter } from 'next/navigation'
 import { DURATION_BRACKETS } from '@/lib/utils'
-import { Save } from 'lucide-react'
+import { Save, Mail, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { PlacesAutocomplete } from '@/components/ui/places-autocomplete'
 
 type PricingConfig = { id: string; configKey: string; configValue: number; label: string; category: string }
@@ -67,16 +67,29 @@ function PricingGrid({ title, rows, cols, pricingValues, onUpdate }: {
   )
 }
 
-export function SettingsClient({ settings: initialSettings, pricing: initialPricing }: {
+export function SettingsClient({ settings: initialSettings, pricing: initialPricing, isGmailConnected, gmailStatus }: {
   settings: any
   pricing: PricingConfig[]
+  isGmailConnected: boolean
+  gmailStatus: string | null
 }) {
   const { toast } = useToast()
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [pricingPending, startPricingTransition] = useTransition()
-  const [activeTab, setActiveTab] = useState<'business' | 'pricing' | 'addons' | 'shoot'>('business')
+  const [activeTab, setActiveTab] = useState<'business' | 'pricing' | 'addons' | 'shoot' | 'integrations'>(
+    gmailStatus ? 'integrations' : 'business'
+  )
   const [baseLocationMap, setBaseLocationMap] = useState<string>(initialSettings?.baseLocation ?? '')
+  const [disconnecting, setDisconnecting] = useState(false)
+
+  useEffect(() => {
+    if (gmailStatus === 'connected') {
+      toast('Gmail connected successfully')
+    } else if (gmailStatus === 'error') {
+      toast('Gmail connection failed — please try again', 'error')
+    }
+  }, [])
 
   // Build mutable pricing map
   const [pricingValues, setPricingValues] = useState<Record<string, number>>(
@@ -107,11 +120,23 @@ export function SettingsClient({ settings: initialSettings, pricing: initialPric
 
   const brackets = DURATION_BRACKETS.map(b => b.key)
 
+  async function handleDisconnectGmail() {
+    setDisconnecting(true)
+    try {
+      await fetch('/api/gmail/disconnect', { method: 'POST' })
+      toast('Gmail disconnected')
+      router.refresh()
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
   const tabs = [
     { key: 'business', label: 'Business Settings' },
     { key: 'pricing', label: 'Edit Pricing' },
     { key: 'addons', label: 'Add-On Rates' },
     { key: 'shoot', label: 'Shoot & Gear Rates' },
+    { key: 'integrations', label: 'Integrations' },
   ] as const
 
   return (
@@ -318,6 +343,62 @@ export function SettingsClient({ settings: initialSettings, pricing: initialPric
                     <p className="text-xs text-gray-400 mt-1">{item.hint}</p>
                   </div>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Integrations */}
+      {activeTab === 'integrations' && (
+        <div className="max-w-2xl space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Mail size={18} />Gmail Integration</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Connect your Gmail account to view labeled email correspondence directly inside each project.
+                Emails labeled with the project name will appear on the project's Emails page.
+              </p>
+
+              {isGmailConnected ? (
+                <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <CheckCircle size={18} />
+                    <span className="font-medium text-sm">Gmail connected</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDisconnectGmail}
+                    disabled={disconnecting}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    {disconnecting ? <><Loader2 size={14} className="animate-spin" /> Disconnecting...</> : 'Disconnect'}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <XCircle size={18} />
+                    <span className="text-sm">Not connected</span>
+                  </div>
+                  <a href="/api/gmail/auth">
+                    <Button size="sm">
+                      <Mail size={14} /> Connect Gmail
+                    </Button>
+                  </a>
+                </div>
+              )}
+
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-2">
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Setup requirements</p>
+                <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
+                  <li>Add <code className="bg-white border border-gray-200 rounded px-1">GMAIL_CLIENT_ID</code> and <code className="bg-white border border-gray-200 rounded px-1">GMAIL_CLIENT_SECRET</code> to your <code className="bg-white border border-gray-200 rounded px-1">.env.local</code></li>
+                  <li>Add <code className="bg-white border border-gray-200 rounded px-1">http://localhost:3000/api/gmail/callback</code> as an authorized redirect URI in Google Cloud Console</li>
+                  <li>Label emails in Gmail with the exact project name to have them appear on the project's Emails page</li>
+                </ul>
               </div>
             </CardContent>
           </Card>

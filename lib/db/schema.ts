@@ -187,5 +187,6 @@ export const businessSettings = sqliteTable('business_settings', {
   logoUrl: text('logo_url'),
   defaultRevisionRounds: integer('default_revision_rounds').default(2),
   paymentTermsText: text('payment_terms_text').default('Payment due within 30 days of invoice date'),
+  gmailRefreshToken: text('gmail_refresh_token'),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
 })
