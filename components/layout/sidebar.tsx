@@ -12,7 +12,7 @@ const navItems = [
   { href: '/settings',  label: 'Settings',  icon: Settings },
 ]
 
-export function Sidebar({ frameioBadge }: { frameioBadge?: React.ReactNode }) {
+export function Sidebar() {
   const pathname = usePathname()
 
   return (
@@ -27,7 +27,6 @@ export function Sidebar({ frameioBadge }: { frameioBadge?: React.ReactNode }) {
       <nav className="flex-1 p-3 space-y-0.5">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(href + '/')
-          const isProjects = href === '/projects'
           return (
             <Link
               key={href}
@@ -41,7 +40,6 @@ export function Sidebar({ frameioBadge }: { frameioBadge?: React.ReactNode }) {
             >
               <Icon size={18} />
               {label}
-              {isProjects && frameioBadge}
             </Link>
           )
         })}

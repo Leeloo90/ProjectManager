@@ -23,22 +23,18 @@ import {
 } from '../actions'
 import {
   Edit, Trash2, Plus, AlertTriangle, ExternalLink, Camera, Package,
-  RotateCcw, FileText, ChevronDown, ChevronUp, Loader2, MapPin, Clapperboard,
-  Link2Off
+  RotateCcw, FileText, ChevronDown, ChevronUp, Loader2, MapPin,
 } from 'lucide-react'
 import { PlacesAutocomplete } from '@/components/ui/places-autocomplete'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { LinkProjectModal } from '@/components/frameio/link-project-modal'
-import { unlinkFrameIoProject } from '@/app/frameio/actions'
-import { AssetBrowser } from '@/components/frameio/asset-browser'
+
 
 type Project = {
   id: string; name: string; status: string; startDate: string; deadline: string;
-  includedRevisionRounds: number | null; frameIoLink: string | null; drivefinalsLink: string | null;
+  includedRevisionRounds: number | null; drivefinalsLink: string | null;
   driveArchiveLink: string | null; notes: string | null; invoiceId: string | null;
   productionCompanyId: string; clientId: string; clientName: string | null; companyName: string | null;
-  frameioProjectId: string | null; frameioProjectName: string | null; frameioRootAssetId: string | null; frameioAccountId: string | null; frameioUnreadComments: number | null;
 }
 
 type Deliverable = {
@@ -61,7 +57,7 @@ type Shoot = {
 }
 type Revision = {
   id: string; roundNumber: number; dateRequested: string; description: string;
-  frameIoLink: string | null; status: string | null;
+  status: string | null;
 }
 
 const BRACKET_SECONDS: Record<string, number> = {
@@ -445,10 +441,6 @@ function RevisionForm({ onSave, onClose }: { onSave: (fd: FormData) => void; onC
         <Label>Description *</Label>
         <Textarea name="description" rows={3} required placeholder="Brief description of changes requested..." />
       </div>
-      <div>
-        <Label>Frame.io Review Link</Label>
-        <Input name="frameIoLink" type="url" placeholder="https://..." />
-      </div>
       <div className="flex justify-end gap-3 pt-2">
         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
         <Button type="submit" disabled={pending}>{pending ? 'Saving...' : 'Log Revision'}</Button>
@@ -504,10 +496,6 @@ function EditProjectForm({ project, companies, clients, onSave, onClose }: {
         <Input name="includedRevisionRounds" type="number" min="0" defaultValue={project.includedRevisionRounds ?? 2} />
       </div>
       <div>
-        <Label>Frame.io Project Link</Label>
-        <Input name="frameIoLink" type="url" defaultValue={project.frameIoLink ?? ''} />
-      </div>
-      <div>
         <Label>Google Drive — Finals Link</Label>
         <Input name="drivefinalsLink" type="url" defaultValue={project.drivefinalsLink ?? ''} />
       </div>
@@ -528,10 +516,9 @@ function EditProjectForm({ project, companies, clients, onSave, onClose }: {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function ProjectDetailClient({ project, deliverables: initialDeliverables, shoot: initialShoot, revisions: initialRevisions, pricingMap, settings, companies, clients, isFrameioConnected }: {
+export function ProjectDetailClient({ project, deliverables: initialDeliverables, shoot: initialShoot, revisions: initialRevisions, pricingMap, settings, companies, clients }: {
   project: Project; deliverables: Deliverable[]; shoot: Shoot | null; revisions: Revision[];
   pricingMap: Record<string, number>; settings: any; companies: any[]; clients: any[];
-  isFrameioConnected: boolean;
 }) {
   const { toast } = useToast()
   const router = useRouter()
@@ -546,8 +533,6 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
   const [bulkEditMode, setBulkEditMode] = useState(false)
   const [bulkEdits, setBulkEdits] = useState<Record<string, { name: string; cost: string }>>({})
   const [bulkSaving, setBulkSaving] = useState(false)
-  const [linkFrameioOpen, setLinkFrameioOpen] = useState(false)
-  const [unlinkingFrameio, setUnlinkingFrameio] = useState(false)
 
   const today = format(new Date(), 'yyyy-MM-dd')
   const isLocked = ['invoiced', 'paid'].includes(project.status)
@@ -595,17 +580,6 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
   function cancelBulkEdit() {
     setBulkEditMode(false)
     setBulkEdits({})
-  }
-
-  async function handleUnlinkFrameio() {
-    setUnlinkingFrameio(true)
-    try {
-      await unlinkFrameIoProject(project.id)
-      toast('Frame.io project unlinked')
-      router.refresh()
-    } finally {
-      setUnlinkingFrameio(false)
-    }
   }
 
   function handleStatusChange(newStatus: string) {
@@ -709,8 +683,7 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
           <div className="mt-2 text-sm text-gray-600 space-y-0.5">
             <p><span className="font-medium">{project.companyName}</span> · {project.clientName}</p>
             <p>Start: {formatDate(project.startDate)} · Deadline: <span className={isOverdue ? 'text-red-600 font-medium' : ''}>{formatDate(project.deadline)}</span></p>
-            {project.frameIoLink && <a href={project.frameIoLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs"><ExternalLink size={12} />Frame.io</a>}
-            {project.drivefinalsLink && <a href={project.drivefinalsLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs ml-3"><ExternalLink size={12} />Finals Drive</a>}
+            {project.drivefinalsLink && <a href={project.drivefinalsLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs"><ExternalLink size={12} />Finals Drive</a>}
             {project.driveArchiveLink && <a href={project.driveArchiveLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs ml-3"><ExternalLink size={12} />Archive</a>}
           </div>
         </div>
@@ -756,46 +729,6 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
           <CardContent><p className="text-sm text-gray-700 whitespace-pre-wrap">{project.notes}</p></CardContent>
         </Card>
       )}
-
-      {/* Frame.io */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Clapperboard size={17} />Frame.io
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              {project.frameioProjectId ? (
-                <Button size="sm" variant="ghost" onClick={handleUnlinkFrameio} disabled={unlinkingFrameio}
-                  title="Unlink Frame.io project">
-                  <Link2Off size={13} className="text-red-500" />
-                </Button>
-              ) : isFrameioConnected ? (
-                <Button size="sm" variant="outline" onClick={() => setLinkFrameioOpen(true)}>
-                  <Clapperboard size={13} /> Link Project
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {!isFrameioConnected ? (
-            <p className="text-sm text-gray-400">
-              Frame.io not connected.{' '}
-              <a href="/settings?tab=integrations" className="text-blue-600 hover:underline">Go to Settings</a> to connect.
-            </p>
-          ) : !project.frameioProjectId ? (
-            <p className="text-sm text-gray-400">No Frame.io project linked. Click "Link Project" to connect one.</p>
-          ) : (
-            <AssetBrowser
-              frameioProjectId={project.frameioProjectId!}
-              rootAssetId={project.frameioRootAssetId}
-              accountId={project.frameioAccountId}
-              projectName={project.frameioProjectName ?? 'Project'}
-            />
-          )}
-        </CardContent>
-      </Card>
 
       {/* Deliverables */}
       <Card>
@@ -959,11 +892,6 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
                     <div>
                       <p className="text-sm font-medium text-gray-900">Round {r.roundNumber} · {formatDate(r.dateRequested)}</p>
                       <p className="text-sm text-gray-600 mt-0.5">{r.description}</p>
-                      {r.frameIoLink && (
-                        <a href={r.frameIoLink} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1 mt-1">
-                          <ExternalLink size={11} />Frame.io link
-                        </a>
-                      )}
                     </div>
                     <Select
                       value={r.status ?? 'pending'}
@@ -1058,11 +986,6 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
         confirmLabel="Remove Shoot"
       />
 
-      <LinkProjectModal
-        appProjectId={project.id}
-        open={linkFrameioOpen}
-        onClose={() => setLinkFrameioOpen(false)}
-      />
     </div>
   )
 }

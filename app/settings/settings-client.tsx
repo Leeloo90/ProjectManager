@@ -9,7 +9,7 @@ import { useToast } from '@/components/ui/toast'
 import { updateBusinessSettings, updateAllPricing } from './actions'
 import { useRouter } from 'next/navigation'
 import { DURATION_BRACKETS } from '@/lib/utils'
-import { Save, Mail, CheckCircle, XCircle, Loader2, Clapperboard } from 'lucide-react'
+import { Save, Mail, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { PlacesAutocomplete } from '@/components/ui/places-autocomplete'
 
 type PricingConfig = { id: string; configKey: string; configValue: number; label: string; category: string }
@@ -67,34 +67,27 @@ function PricingGrid({ title, rows, cols, pricingValues, onUpdate }: {
   )
 }
 
-export function SettingsClient({ settings: initialSettings, pricing: initialPricing, isGmailConnected, gmailStatus, frameioIntegration, initialTab, frameioConnected }: {
+export function SettingsClient({ settings: initialSettings, pricing: initialPricing, isGmailConnected, gmailStatus }: {
   settings: any
   pricing: PricingConfig[]
   isGmailConnected: boolean
   gmailStatus: string | null
-  frameioIntegration: any
-  initialTab: string | null
-  frameioConnected: boolean
 }) {
   const { toast } = useToast()
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [pricingPending, startPricingTransition] = useTransition()
   const [activeTab, setActiveTab] = useState<'business' | 'pricing' | 'addons' | 'shoot' | 'integrations'>(
-    (gmailStatus || initialTab === 'integrations' || frameioConnected) ? 'integrations' : 'business'
+    gmailStatus ? 'integrations' : 'business'
   )
   const [baseLocationMap, setBaseLocationMap] = useState<string>(initialSettings?.baseLocation ?? '')
   const [disconnecting, setDisconnecting] = useState(false)
-  const [disconnectingFrameio, setDisconnectingFrameio] = useState(false)
 
   useEffect(() => {
     if (gmailStatus === 'connected') {
       toast('Gmail connected successfully')
     } else if (gmailStatus === 'error') {
       toast('Gmail connection failed — please try again', 'error')
-    }
-    if (frameioConnected) {
-      toast('Frame.io connected successfully')
     }
   }, [])
 
@@ -135,17 +128,6 @@ export function SettingsClient({ settings: initialSettings, pricing: initialPric
       router.refresh()
     } finally {
       setDisconnecting(false)
-    }
-  }
-
-  async function handleDisconnectFrameio() {
-    setDisconnectingFrameio(true)
-    try {
-      await fetch('/api/frameio/disconnect', { method: 'POST' })
-      toast('Frame.io disconnected')
-      router.refresh()
-    } finally {
-      setDisconnectingFrameio(false)
     }
   }
 
@@ -370,62 +352,6 @@ export function SettingsClient({ settings: initialSettings, pricing: initialPric
       {/* Integrations */}
       {activeTab === 'integrations' && (
         <div className="max-w-2xl space-y-4">
-
-          {/* Frame.io */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Clapperboard size={18} />Frame.io Integration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Connect Frame.io to link projects and sync reviewer comments automatically.
-              </p>
-
-              {frameioIntegration?.isActive ? (
-                <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3">
-                  <div className="flex items-center gap-2 text-green-700">
-                    <CheckCircle size={18} />
-                    <div>
-                      <span className="font-medium text-sm">Connected</span>
-                      {frameioIntegration.accountName && (
-                        <p className="text-xs text-green-600">{frameioIntegration.accountName}</p>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDisconnectFrameio}
-                    disabled={disconnectingFrameio}
-                    className="text-red-600 border-red-200 hover:bg-red-50"
-                  >
-                    {disconnectingFrameio ? <><Loader2 size={14} className="animate-spin" /> Disconnecting...</> : 'Disconnect'}
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <XCircle size={18} />
-                    <span className="text-sm">Not connected</span>
-                  </div>
-                  <a href="/api/frameio/auth">
-                    <Button size="sm">
-                      <Clapperboard size={14} /> Connect Frame.io
-                    </Button>
-                  </a>
-                </div>
-              )}
-
-              <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-2">
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Setup requirements</p>
-                <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
-                  <li>Add <code className="bg-white border border-gray-200 rounded px-1">FRAMEIO_CLIENT_ID</code> and <code className="bg-white border border-gray-200 rounded px-1">FRAMEIO_CLIENT_SECRET</code> to your <code className="bg-white border border-gray-200 rounded px-1">.env.local</code></li>
-                  <li>Add <code className="bg-white border border-gray-200 rounded px-1">http://localhost:3000/api/frameio/callback</code> as a redirect URI in your Adobe Developer Console app</li>
-                  <li>Optionally set <code className="bg-white border border-gray-200 rounded px-1">FRAMEIO_WEBHOOK_SECRET</code> for verified webhook events</li>
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
 
           {/* Gmail */}
           <Card>

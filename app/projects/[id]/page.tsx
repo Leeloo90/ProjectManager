@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { projects, clients, productionCompanies, deliverables, shootDetails, revisions, pricingConfig, businessSettings, integrations } from '@/lib/db/schema'
+import { projects, clients, productionCompanies, deliverables, shootDetails, revisions, pricingConfig, businessSettings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { Topbar } from '@/components/layout/topbar'
@@ -17,7 +17,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     startDate: projects.startDate,
     deadline: projects.deadline,
     includedRevisionRounds: projects.includedRevisionRounds,
-    frameIoLink: projects.frameIoLink,
     drivefinalsLink: projects.drivefinalsLink,
     driveArchiveLink: projects.driveArchiveLink,
     notes: projects.notes,
@@ -26,11 +25,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     clientId: projects.clientId,
     clientName: clients.name,
     companyName: productionCompanies.name,
-    frameioProjectId: projects.frameioProjectId,
-    frameioProjectName: projects.frameioProjectName,
-    frameioRootAssetId: projects.frameioRootAssetId,
-    frameioAccountId: projects.frameioAccountId,
-    frameioUnreadComments: projects.frameioUnreadComments,
   })
     .from(projects)
     .leftJoin(clients, eq(projects.clientId, clients.id))
@@ -47,7 +41,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const settings = await db.select().from(businessSettings).where(eq(businessSettings.id, 'singleton')).get()
   const allCompanies = await db.select().from(productionCompanies).all()
   const allClients = await db.select().from(clients).all()
-  const frameioIntegration = await db.select({ isActive: integrations.isActive }).from(integrations).where(eq(integrations.service, 'frameio')).get()
 
   const pricingMap = Object.fromEntries(pricing.map(p => [p.configKey, p.configValue]))
 
@@ -75,7 +68,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         settings={settings ?? null}
         companies={allCompanies}
         clients={allClients}
-        isFrameioConnected={!!frameioIntegration?.isActive}
       />
     </div>
   )

@@ -43,17 +43,10 @@ export const projects = sqliteTable('projects', {
     enum: ['enquiry', 'quoted', 'confirmed', 'in_production', 'in_post', 'review', 'revisions', 'final_delivery', 'finished', 'invoiced', 'paid', 'cancelled'],
   }).notNull().default('enquiry'),
   includedRevisionRounds: integer('included_revision_rounds').default(2),
-  frameIoLink: text('frame_io_link'),
   drivefinalsLink: text('drive_finals_link'),
   driveArchiveLink: text('drive_archive_link'),
   notes: text('notes'),
   invoiceId: text('invoice_id'),
-  frameioProjectId: text('frameio_project_id'),
-  frameioProjectName: text('frameio_project_name'),
-  frameioRootAssetId: text('frameio_root_asset_id'),
-  frameioWorkspaceId: text('frameio_workspace_id'),
-  frameioAccountId: text('frameio_account_id'),
-  frameioUnreadComments: integer('frameio_unread_comments').default(0),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
 })
@@ -127,7 +120,6 @@ export const revisions = sqliteTable('revisions', {
   roundNumber: integer('round_number').notNull(),
   dateRequested: text('date_requested').notNull(),
   description: text('description').notNull(),
-  frameIoLink: text('frame_io_link'),
   status: text('status', { enum: ['pending', 'in_progress', 'complete'] }).default('pending'),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
@@ -173,35 +165,6 @@ export const pricingConfig = sqliteTable('pricing_config', {
   label: text('label').notNull(),
   category: text('category').notNull(),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
-})
-
-// ─── Frame.io Comments ────────────────────────────────────────────────────────
-export const frameioComments = sqliteTable('frameio_comments', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  frameioAssetId: text('frameio_asset_id').notNull(),
-  frameioAssetName: text('frameio_asset_name').notNull(),
-  frameioCommentId: text('frameio_comment_id').notNull().unique(),
-  commenterName: text('commenter_name'),
-  commentText: text('comment_text').notNull(),
-  timecode: text('timecode'),
-  frameioCreatedAt: text('frameio_created_at'),
-  isRead: integer('is_read', { mode: 'boolean' }).default(false),
-  createdAt: text('created_at').default(sql`(datetime('now'))`),
-})
-
-// ─── Integrations ─────────────────────────────────────────────────────────────
-export const integrations = sqliteTable('integrations', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  service: text('service').notNull().unique(),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  tokenExpiresAt: text('token_expires_at'),
-  accountId: text('account_id'),
-  accountName: text('account_name'),
-  webhookId: text('webhook_id'),
-  connectedAt: text('connected_at'),
-  isActive: integer('is_active', { mode: 'boolean' }).default(false),
 })
 
 // ─── Business Settings ────────────────────────────────────────────────────────
