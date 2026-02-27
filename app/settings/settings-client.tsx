@@ -67,27 +67,37 @@ function PricingGrid({ title, rows, cols, pricingValues, onUpdate }: {
   )
 }
 
-export function SettingsClient({ settings: initialSettings, pricing: initialPricing, isGmailConnected, gmailStatus }: {
+export function SettingsClient({ settings: initialSettings, pricing: initialPricing, isGmailConnected, gmailStatus, isFrameioConnected, frameioStatus }: {
   settings: any
   pricing: PricingConfig[]
   isGmailConnected: boolean
   gmailStatus: string | null
+  isFrameioConnected: boolean
+  frameioStatus: string | null
 }) {
   const { toast } = useToast()
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [pricingPending, startPricingTransition] = useTransition()
   const [activeTab, setActiveTab] = useState<'business' | 'pricing' | 'addons' | 'shoot' | 'integrations'>(
-    gmailStatus ? 'integrations' : 'business'
+    (gmailStatus || frameioStatus) ? 'integrations' : 'business'
   )
   const [baseLocationMap, setBaseLocationMap] = useState<string>(initialSettings?.baseLocation ?? '')
   const [disconnecting, setDisconnecting] = useState(false)
+  const [disconnectingFrameio, setDisconnectingFrameio] = useState(false)
+  const [frameioConnected, setFrameioConnected] = useState(isFrameioConnected)
 
   useEffect(() => {
     if (gmailStatus === 'connected') {
       toast('Gmail connected successfully')
     } else if (gmailStatus === 'error') {
       toast('Gmail connection failed — please try again', 'error')
+    }
+    if (frameioStatus === 'connected') {
+      toast('Frame.io connected successfully')
+      setFrameioConnected(true)
+    } else if (frameioStatus === 'error') {
+      toast('Frame.io connection failed — please try again', 'error')
     }
   }, [])
 
@@ -128,6 +138,17 @@ export function SettingsClient({ settings: initialSettings, pricing: initialPric
       router.refresh()
     } finally {
       setDisconnecting(false)
+    }
+  }
+
+  async function handleDisconnectFrameio() {
+    setDisconnectingFrameio(true)
+    try {
+      await fetch('/api/frameio/disconnect', { method: 'POST' })
+      setFrameioConnected(false)
+      toast('Frame.io disconnected')
+    } finally {
+      setDisconnectingFrameio(false)
     }
   }
 
@@ -400,6 +421,58 @@ export function SettingsClient({ settings: initialSettings, pricing: initialPric
                   <li>Add <code className="bg-white border border-gray-200 rounded px-1">GMAIL_CLIENT_ID</code> and <code className="bg-white border border-gray-200 rounded px-1">GMAIL_CLIENT_SECRET</code> to your <code className="bg-white border border-gray-200 rounded px-1">.env.local</code></li>
                   <li>Add <code className="bg-white border border-gray-200 rounded px-1">http://localhost:3000/api/gmail/callback</code> as an authorized redirect URI in Google Cloud Console</li>
                   <li>Label emails in Gmail with the exact project name to have them appear on the project's Emails page</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Frame.io */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M0 0h8v8H0zm8 8h8v8H8zM0 16h8v8H0z"/></svg>
+                Frame.io Integration
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Connect your Frame.io account to browse assets, watch videos, and review comments directly inside each project.
+              </p>
+
+              {frameioConnected ? (
+                <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <CheckCircle size={18} />
+                    <span className="font-medium text-sm">Frame.io connected</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDisconnectFrameio}
+                    disabled={disconnectingFrameio}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    {disconnectingFrameio ? <><Loader2 size={14} className="animate-spin" /> Disconnecting...</> : 'Disconnect'}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <XCircle size={18} />
+                    <span className="text-sm">Not connected</span>
+                  </div>
+                  <a href="/api/frameio/connect">
+                    <Button size="sm">Connect Frame.io</Button>
+                  </a>
+                </div>
+              )}
+
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-2">
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Setup requirements</p>
+                <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
+                  <li>Add <code className="bg-white border border-gray-200 rounded px-1">FRAMEIO_CLIENT_ID</code> and <code className="bg-white border border-gray-200 rounded px-1">FRAMEIO_CLIENT_SECRET</code> to your <code className="bg-white border border-gray-200 rounded px-1">.env.local</code></li>
+                  <li>Create an OAuth app in Adobe Developer Console with the Frame.io V4 API enabled</li>
+                  <li>Set the redirect URI to <code className="bg-white border border-gray-200 rounded px-1">http://localhost:3000/api/frameio/callback</code></li>
                 </ul>
               </div>
             </CardContent>

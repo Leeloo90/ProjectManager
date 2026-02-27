@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { projects, clients, productionCompanies, deliverables, shootDetails, revisions, pricingConfig, businessSettings } from '@/lib/db/schema'
+import { projects, clients, productionCompanies, deliverables, shootDetails, revisions, pricingConfig, businessSettings, } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { Topbar } from '@/components/layout/topbar'
@@ -21,6 +21,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     driveArchiveLink: projects.driveArchiveLink,
     notes: projects.notes,
     invoiceId: projects.invoiceId,
+    frameioProjectId: projects.frameioProjectId,
+    frameioRootFolderId: projects.frameioRootFolderId,
     productionCompanyId: projects.productionCompanyId,
     clientId: projects.clientId,
     clientName: clients.name,

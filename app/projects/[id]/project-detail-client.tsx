@@ -19,21 +19,23 @@ import {
   saveDeliverable, deleteDeliverable,
   saveShootDetails, deleteShootDetails,
   addRevision, updateRevisionStatus, calculateDeliverableCost,
-  updateDeliverableNameAndCost
+  updateDeliverableNameAndCost, unlinkFrameioProject
 } from '../actions'
 import {
   Edit, Trash2, Plus, AlertTriangle, ExternalLink, Camera, Package,
-  RotateCcw, FileText, ChevronDown, ChevronUp, Loader2, MapPin,
+  RotateCcw, FileText, ChevronDown, ChevronUp, Loader2, MapPin, Film,
 } from 'lucide-react'
 import { PlacesAutocomplete } from '@/components/ui/places-autocomplete'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
+import { FrameioLinkDialog } from './frameio-link-dialog'
 
 
 type Project = {
   id: string; name: string; status: string; startDate: string; deadline: string;
   includedRevisionRounds: number | null; drivefinalsLink: string | null;
   driveArchiveLink: string | null; notes: string | null; invoiceId: string | null;
+  frameioProjectId: string | null; frameioRootFolderId: string | null;
   productionCompanyId: string; clientId: string; clientName: string | null; companyName: string | null;
 }
 
@@ -533,6 +535,9 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
   const [bulkEditMode, setBulkEditMode] = useState(false)
   const [bulkEdits, setBulkEdits] = useState<Record<string, { name: string; cost: string }>>({})
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [frameioLinkOpen, setFrameioLinkOpen] = useState(false)
+  const [frameioLinked, setFrameioLinked] = useState(!!project.frameioProjectId)
+  const [unlinkingFrameio, setUnlinkingFrameio] = useState(false)
 
   const today = format(new Date(), 'yyyy-MM-dd')
   const isLocked = ['invoiced', 'paid'].includes(project.status)
@@ -729,6 +734,60 @@ export function ProjectDetailClient({ project, deliverables: initialDeliverables
           <CardContent><p className="text-sm text-gray-700 whitespace-pre-wrap">{project.notes}</p></CardContent>
         </Card>
       )}
+
+      {/* Frame.io */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2"><Film size={17} />Frame.io</CardTitle>
+            {frameioLinked && (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-red-600 border-red-200 hover:bg-red-50"
+                  disabled={unlinkingFrameio}
+                  onClick={async () => {
+                    setUnlinkingFrameio(true)
+                    await unlinkFrameioProject(project.id)
+                    setFrameioLinked(false)
+                    setUnlinkingFrameio(false)
+                  }}
+                >
+                  {unlinkingFrameio ? <Loader2 size={13} className="animate-spin" /> : 'Unlink'}
+                </Button>
+                <a href={`/projects/${project.id}/frameio`}>
+                  <Button size="sm" variant="outline">Open →</Button>
+                </a>
+              </div>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {frameioLinked ? (
+            <p className="text-sm text-gray-600">
+              Frame.io project linked.{' '}
+              <a href={`/projects/${project.id}/frameio`} className="text-blue-600 underline">
+                Browse assets →
+              </a>
+            </p>
+          ) : (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-gray-500">No Frame.io project linked.</p>
+              <Button size="sm" variant="outline" onClick={() => setFrameioLinkOpen(true)}>
+                Link Frame.io Project
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <FrameioLinkDialog
+        open={frameioLinkOpen}
+        onClose={() => setFrameioLinkOpen(false)}
+        onLinked={() => { setFrameioLinkOpen(false); setFrameioLinked(true) }}
+        projectId={project.id}
+      />
 
       {/* Deliverables */}
       <Card>

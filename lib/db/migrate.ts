@@ -176,6 +176,8 @@ export function initializeDatabase() {
   try { sqlite.exec(`ALTER TABLE invoices ADD COLUMN discount_type TEXT DEFAULT 'none'`) } catch {}
   try { sqlite.exec(`ALTER TABLE invoices ADD COLUMN discount_value REAL DEFAULT 0`) } catch {}
   try { sqlite.exec(`ALTER TABLE business_settings ADD COLUMN gmail_refresh_token TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_project_id TEXT DEFAULT NULL`) } catch {}
+  try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_root_folder_id TEXT DEFAULT NULL`) } catch {}
 
   // Seed business settings if not exists
   const settings = sqlite.prepare('SELECT id FROM business_settings WHERE id = ?').get('singleton')

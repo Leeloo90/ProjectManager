@@ -47,6 +47,8 @@ export const projects = sqliteTable('projects', {
   driveArchiveLink: text('drive_archive_link'),
   notes: text('notes'),
   invoiceId: text('invoice_id'),
+  frameioProjectId: text('frameio_project_id'),
+  frameioRootFolderId: text('frameio_root_folder_id'),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
 })

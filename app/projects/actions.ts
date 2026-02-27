@@ -337,3 +337,23 @@ export async function updateDeliverableNameAndCost(deliverableId: string, name: 
     revalidatePath('/dashboard')
   }
 }
+
+// ─── Frame.io ─────────────────────────────────────────────────────────────────
+
+export async function linkFrameioProject(
+  projectId: string,
+  frameioProjectId: string,
+  frameioRootFolderId: string
+): Promise<void> {
+  await db.update(projects)
+    .set({ frameioProjectId, frameioRootFolderId, updatedAt: new Date().toISOString() })
+    .where(eq(projects.id, projectId))
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function unlinkFrameioProject(projectId: string): Promise<void> {
+  await db.update(projects)
+    .set({ frameioProjectId: null, frameioRootFolderId: null, updatedAt: new Date().toISOString() })
+    .where(eq(projects.id, projectId))
+  revalidatePath(`/projects/${projectId}`)
+}
