@@ -42,7 +42,6 @@ export async function updateProject(id: string, formData: FormData) {
       startDate: formData.get('startDate') as string,
       deadline: formData.get('deadline') as string,
       includedRevisionRounds: parseInt(formData.get('includedRevisionRounds') as string) || 2,
-      frameIoLink: formData.get('frameIoLink') as string || null,
       drivefinalsLink: formData.get('drivefinalsLink') as string || null,
       driveArchiveLink: formData.get('driveArchiveLink') as string || null,
       notes: formData.get('notes') as string || null,
@@ -311,7 +310,6 @@ export async function addRevision(projectId: string, formData: FormData) {
     roundNumber,
     dateRequested: formData.get('dateRequested') as string,
     description: formData.get('description') as string,
-    frameIoLink: formData.get('frameIoLink') as string || null,
     status: 'pending',
   })
   await db.insert(activityLog).values({
