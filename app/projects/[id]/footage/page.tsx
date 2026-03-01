@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, CheckCircle2, XCircle } from 'lucide-react'
 import { getFootageByProjectId } from '@/lib/actions/footage'
 import { getGoogleAuthStatus } from '@/lib/actions/google-auth'
 import { FootageClient } from './footage-client'
@@ -42,9 +42,24 @@ export default async function FootagePage({ params }: { params: Promise<{ id: st
           </Button>
         </Link>
         <span className="text-gray-500">|</span>
-        <span className="text-white font-medium">{project.name}</span>
-        <span className="text-gray-500">/</span>
-        <span className="text-gray-400">Footage</span>
+        <div className="flex items-center gap-2">
+          <span className="text-white font-medium">{project.name}</span>
+          <span className="text-gray-500">/</span>
+          <span className="text-gray-400">Footage</span>
+        </div>
+        <div className="ml-auto">
+          {connected ? (
+            <div className="flex items-center gap-2 text-green-400" title="Google Drive connected">
+              <CheckCircle2 size={16} /> 
+            </div>
+          ) : (
+            <Link href="/settings?tab=integrations" title="Google Drive not connected. Click to connect.">
+              <div className="flex items-center gap-2 text-red-400">
+                <XCircle size={16} />
+              </div>
+            </Link>
+          )}
+        </div>
       </div>
 
       <FootageClient
@@ -56,3 +71,4 @@ export default async function FootagePage({ params }: { params: Promise<{ id: st
     </div>
   )
 }
+

@@ -55,7 +55,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         actions={
           <div className="flex items-center gap-2">
             <Link href={`/projects/${id}/footage`}>
-              <Button variant="outline"><HardDrive size={16} /> Footage</Button>
+              <Button variant="outline"><HardDrive size={16} /> Manage Assets</Button>
             </Link>
             <Link href={`/projects/${id}/emails`}>
               <Button variant="outline"><Mail size={16} /> Emails</Button>

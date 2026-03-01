@@ -1,23 +1,26 @@
 'use client'
 
-import { createContext, useContext, useState, useRef, useCallback } from 'react'
+import { createContext, useContext, useState, useRef, useCallback, useEffect, useMemo, startTransition } from 'react'
 
 export type ConflictResolution = 'overwrite' | 'rename' | 'skip'
 
 export type UploadJob = {
   id: string
   projectName: string
-  folderLabel: string       // Target Drive subfolder (e.g. "Proxy Footage")
+  folderLabel: string
   folderId: string
+  files: File[]
+  isFolderUpload: boolean
   totalFiles: number
-  currentIndex: number      // 0-based index of file currently being uploaded
+  currentIndex: number
   currentFileName: string
   successCount: number
   skipCount: number
   errorCount: number
-  status: 'uploading' | 'conflict' | 'done'
+  status: 'uploading' | 'conflict' | 'done' | 'paused' | 'queued' | 'checking' | 'needs-resolution'
   conflictFileName?: string
-  uploadedFolderName?: string  // Set for folder uploads (the local folder name)
+  conflictingFiles: string[]
+  uploadedFolderName?: string
 }
 
 type AddJobParams = {
@@ -25,27 +28,37 @@ type AddJobParams = {
   folderId: string
   folderLabel: string
   projectName: string
-  isFolderUpload?: boolean  // When true, files have webkitRelativePath set
+  isFolderUpload?: boolean
+  onComplete?: (successCount: number, skipCount: number, errorCount: number) => void
 }
 
-type UploadContextValue = {
-  jobs: UploadJob[]
+type UploadActions = {
   addJob: (params: AddJobParams) => void
   resolveConflict: (jobId: string, resolution: ConflictResolution) => void
+  resolveJobConflicts: (jobId: string, resolution: ConflictResolution) => void
   dismissJob: (jobId: string) => void
+  pauseJob: (jobId: string) => void
+  resumeJob: (jobId: string) => void
 }
 
-const UploadContext = createContext<UploadContextValue | null>(null)
+// Split into two contexts so components that only need actions don't re-render on every upload tick
+const UploadJobsContext = createContext<UploadJob[]>([])
+const UploadActionsContext = createContext<UploadActions | null>(null)
+
+export function useUploadActions(): UploadActions {
+  const ctx = useContext(UploadActionsContext)
+  if (!ctx) throw new Error('useUploadActions must be used inside UploadProvider')
+  return ctx
+}
 
 export function useUpload() {
-  const ctx = useContext(UploadContext)
-  if (!ctx) throw new Error('useUpload must be used inside UploadProvider')
-  return ctx
+  return { jobs: useContext(UploadJobsContext), ...useUploadActions() }
 }
 
 async function uploadFile(
   file: File,
   folderId: string,
+  signal: AbortSignal,
   conflictResolution?: ConflictResolution,
 ): Promise<{ status: 'success' | 'skip' | 'error' | 'conflict'; existingFileName?: string }> {
   const formData = new FormData()
@@ -55,29 +68,28 @@ async function uploadFile(
   if (conflictResolution) formData.append('conflictResolution', conflictResolution)
 
   try {
-    const res = await fetch('/api/drive/upload', { method: 'POST', body: formData })
+    const res = await fetch('/api/drive/upload', { method: 'POST', body: formData, signal })
     const data = await res.json()
     if (!res.ok) return { status: 'error' }
     if (data.conflict) return { status: 'conflict', existingFileName: data.existingFileName }
     if (data.skipped) return { status: 'skip' }
     return { status: 'success' }
-  } catch {
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw err 
+    }
     return { status: 'error' }
   }
 }
 
-// Resolve or create a folder path on Drive, returning the leaf folder ID.
-// folderCache maps relative path segments (e.g. "MyFolder/sub") → Drive folderId.
 async function resolveFolderPath(
   segments: string[],
   rootFolderId: string,
   folderCache: Map<string, string>,
 ): Promise<string> {
   let parentId = rootFolderId
-
   for (let i = 0; i < segments.length; i++) {
     const pathKey = segments.slice(0, i + 1).join('/')
-
     if (!folderCache.has(pathKey)) {
       const res = await fetch('/api/drive/mkdir', {
         method: 'POST',
@@ -88,163 +100,238 @@ async function resolveFolderPath(
       if (!data.folderId) throw new Error(`Failed to create folder: ${segments[i]}`)
       folderCache.set(pathKey, data.folderId)
     }
-
     parentId = folderCache.get(pathKey)!
   }
-
   return parentId
 }
 
 export function UploadProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<UploadJob[]>([])
-  // jobId → resolver: pauses the async loop until user picks a resolution
+  const activeUploads = useRef(new Set<string>())
+  const abortControllers = useRef(new Map<string, AbortController>())
+  
   const resolversRef = useRef<Map<string, (resolution: ConflictResolution) => void>>(new Map())
-  // jobIds that have "skip all conflicts" enabled — avoids stale closure issues
+  const preResolversRef = useRef<Map<string, (resolution: ConflictResolution) => void>>(new Map())
   const autoSkipRef = useRef<Set<string>>(new Set())
+  const onCompleteCallbacks = useRef<Map<string, (s: number, sk: number, e: number) => void>>(new Map())
 
-  const addJob = useCallback(({
-    files,
-    folderId,
-    folderLabel,
-    projectName,
-    isFolderUpload = false,
-  }: AddJobParams) => {
-    const jobId = crypto.randomUUID()
-    const uploadedFolderName = isFolderUpload
-      ? files[0]?.webkitRelativePath?.split('/')[0] ?? 'Folder'
-      : undefined
+  const startUpload = useCallback(async (job: UploadJob) => {
+    if (activeUploads.current.has(job.id)) return
+    activeUploads.current.add(job.id)
 
-    setJobs(prev => [
-      ...prev,
-      {
-        id: jobId,
-        projectName,
-        folderLabel,
-        folderId,
-        totalFiles: files.length,
-        currentIndex: 0,
-        currentFileName: files[0]?.name ?? '',
-        successCount: 0,
-        skipCount: 0,
-        errorCount: 0,
-        status: 'uploading',
-        uploadedFolderName,
-      },
-    ])
-
-    // Fire-and-forget async loop
-    ;(async () => {
-      let successCount = 0
-      let skipCount = 0
-      let errorCount = 0
-
-      // Cache of relative path → Drive folderId (used for folder uploads)
-      const folderCache = new Map<string, string>()
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-
-        setJobs(prev =>
-          prev.map(j =>
-            j.id === jobId
-              ? { ...j, currentIndex: i, currentFileName: file.name, status: 'uploading' }
-              : j,
-          ),
-        )
-
-        // Determine target folder: for folder uploads, create intermediate dirs as needed
-        let targetFolderId = folderId
-        if (isFolderUpload && file.webkitRelativePath) {
-          const parts = file.webkitRelativePath.split('/')
-          const dirParts = parts.slice(0, -1) // everything except the filename
-          if (dirParts.length > 0) {
-            try {
-              targetFolderId = await resolveFolderPath(dirParts, folderId, folderCache)
-            } catch {
-              errorCount++
-              setJobs(prev =>
-                prev.map(j => (j.id === jobId ? { ...j, successCount, skipCount, errorCount } : j)),
-              )
-              continue
-            }
-          }
-        }
-
-        const result = await uploadFile(file, targetFolderId)
-
-        if (result.status === 'conflict') {
-          // If the user previously said "skip" for this batch, auto-skip without asking
-          if (autoSkipRef.current.has(jobId)) {
-            skipCount++
-            setJobs(prev =>
-              prev.map(j => (j.id === jobId ? { ...j, successCount, skipCount, errorCount } : j)),
-            )
-            continue
-          }
-
-          // Pause the loop and show conflict UI
-          setJobs(prev =>
-            prev.map(j =>
-              j.id === jobId
-                ? { ...j, status: 'conflict', conflictFileName: file.name }
-                : j,
-            ),
+    // ─── Pre-scan for conflicts (flat uploads only) ──────────────────────────
+    // These are urgent — they need to show UI immediately
+    let preResolution: ConflictResolution | null = null
+    if (!job.isFolderUpload) {
+      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'checking' } : j))
+      try {
+        const res = await fetch(`/api/drive/files?folderId=${job.folderId}`)
+        if (res.ok) {
+          const existingFiles: { name: string; mimeType: string }[] = await res.json()
+          const existingNames = new Set(
+            existingFiles
+              .filter(f => f.mimeType !== 'application/vnd.google-apps.folder')
+              .map(f => f.name)
           )
-
-          const resolution = await new Promise<ConflictResolution>(resolve => {
-            resolversRef.current.set(jobId, resolve)
-          })
-          resolversRef.current.delete(jobId)
-
-          // If the user chose "skip", remember it for the rest of this job's batch
-          if (resolution === 'skip') {
-            autoSkipRef.current.add(jobId)
-            skipCount++
-            setJobs(prev =>
-              prev.map(j => (j.id === jobId ? { ...j, successCount, skipCount, errorCount } : j)),
+          const conflicting = job.files.map(f => f.name).filter(name => existingNames.has(name))
+          if (conflicting.length > 0) {
+            setJobs(prev => prev.map(j => j.id === job.id
+              ? { ...j, status: 'needs-resolution', conflictingFiles: conflicting }
+              : j
+            ))
+            preResolution = await new Promise<ConflictResolution>(resolve =>
+              preResolversRef.current.set(job.id, resolve)
             )
+            preResolversRef.current.delete(job.id)
+            if (!activeUploads.current.has(job.id)) return
+          }
+        }
+      } catch {
+        // Pre-scan failed — per-file conflict handling will cover it
+      }
+    }
+
+    const folderCache = new Map<string, string>()
+    // Track counts locally so the onComplete callback doesn't depend on React flushing state
+    let successCount = 0, skipCount = 0, errorCount = 0
+
+    for (let i = job.currentIndex; i < job.files.length; i++) {
+      const controller = new AbortController()
+      abortControllers.current.set(job.id, controller)
+
+      const file = job.files[i]
+      // Progress update — non-urgent, defer so user interactions aren't blocked
+      const idx = i, fileName = file.name
+      startTransition(() => {
+        setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, currentIndex: idx, currentFileName: fileName, status: 'uploading' } : j)))
+      })
+
+      let targetFolderId = job.folderId
+      if (job.isFolderUpload && file.webkitRelativePath) {
+        const parts = file.webkitRelativePath.split('/')
+        const dirParts = parts.slice(0, -1)
+        if (dirParts.length > 0) {
+          try {
+            targetFolderId = await resolveFolderPath(dirParts, job.folderId, folderCache)
+          } catch {
+            errorCount++
+            const ec = errorCount
+            startTransition(() => {
+              setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, errorCount: ec } : j)))
+            })
             continue
           }
-
-          const retryResult = await uploadFile(file, targetFolderId, resolution)
-          if (retryResult.status === 'success') successCount++
-          else errorCount++
-        } else if (result.status === 'success') {
-          successCount++
-        } else if (result.status === 'skip') {
-          skipCount++
-        } else {
-          errorCount++
         }
-
-        setJobs(prev =>
-          prev.map(j => (j.id === jobId ? { ...j, successCount, skipCount, errorCount } : j)),
-        )
       }
 
-      autoSkipRef.current.delete(jobId)
-      setJobs(prev =>
-        prev.map(j =>
-          j.id === jobId
-            ? { ...j, status: 'done', successCount, skipCount, errorCount }
-            : j,
-        ),
-      )
-    })()
+      try {
+        const result = await uploadFile(file, targetFolderId, controller.signal, preResolution ?? undefined)
+
+        if (result.status === 'conflict') {
+          if (autoSkipRef.current.has(job.id)) {
+            skipCount++
+            const sc = skipCount
+            startTransition(() => {
+              setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, skipCount: sc } : j)))
+            })
+            continue
+          }
+
+          // Conflict UI — urgent, show immediately
+          setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, status: 'conflict', conflictFileName: file.name } : j)))
+          const resolution = await new Promise<ConflictResolution>(resolve => resolversRef.current.set(job.id, resolve))
+          resolversRef.current.delete(job.id)
+
+          if (resolution === 'skip') {
+            autoSkipRef.current.add(job.id)
+            skipCount++
+            const sc = skipCount
+            startTransition(() => {
+              setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, skipCount: sc } : j)))
+            })
+            continue
+          }
+
+          const retryController = new AbortController()
+          abortControllers.current.set(job.id, retryController)
+          const retryResult = await uploadFile(file, targetFolderId, retryController.signal, resolution)
+          if (retryResult.status === 'success') successCount++; else errorCount++
+          const sc2 = successCount, ec2 = errorCount
+          startTransition(() => {
+            setJobs(prev => prev.map(j => j.id === job.id ? { ...j, successCount: sc2, errorCount: ec2 } : j))
+          })
+        } else if (result.status === 'success') {
+          successCount++
+          const sc = successCount
+          startTransition(() => {
+            setJobs(prev => prev.map(j => j.id === job.id ? { ...j, successCount: sc } : j))
+          })
+        } else if (result.status === 'skip') {
+          skipCount++
+          const sk = skipCount
+          startTransition(() => {
+            setJobs(prev => prev.map(j => j.id === job.id ? { ...j, skipCount: sk } : j))
+          })
+        } else {
+          errorCount++
+          const ec = errorCount
+          startTransition(() => {
+            setJobs(prev => prev.map(j => j.id === job.id ? { ...j, errorCount: ec } : j))
+          })
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          // Pause state — urgent
+          setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, status: 'paused', currentIndex: i } : j)))
+          activeUploads.current.delete(job.id)
+          return
+        }
+      }
+    }
+
+    autoSkipRef.current.delete(job.id)
+    abortControllers.current.delete(job.id)
+    // Fire callback immediately with local counts — don't wait for React to flush
+    onCompleteCallbacks.current.get(job.id)?.(successCount, skipCount, errorCount)
+    onCompleteCallbacks.current.delete(job.id)
+    activeUploads.current.delete(job.id)
+    // Done state — set counts explicitly from local vars so order doesn't matter
+    startTransition(() => {
+      setJobs(prev => prev.map(j => j.id === job.id
+        ? { ...j, status: 'done' as const, currentIndex: j.totalFiles, successCount, skipCount, errorCount }
+        : j
+      ))
+    })
+  }, [])
+
+  useEffect(() => {
+    const nextJob = jobs.find(j => j.status === 'queued')
+    if (nextJob) {
+      startUpload(nextJob)
+    }
+  }, [jobs, startUpload])
+
+  const addJob = useCallback((params: AddJobParams) => {
+    const jobId = crypto.randomUUID()
+    const { files, isFolderUpload = false, onComplete } = params
+    const uploadedFolderName = isFolderUpload ? files[0]?.webkitRelativePath?.split('/')[0] ?? 'Folder' : undefined
+
+    if (onComplete) onCompleteCallbacks.current.set(jobId, onComplete)
+
+    const newJob: UploadJob = {
+      ...params,
+      id: jobId,
+      isFolderUpload,
+      totalFiles: files.length,
+      currentIndex: 0,
+      currentFileName: files[0]?.name ?? '',
+      successCount: 0,
+      skipCount: 0,
+      errorCount: 0,
+      status: 'queued',
+      conflictingFiles: [],
+      uploadedFolderName,
+    }
+    setJobs(prev => [...prev, newJob])
+  }, [])
+  
+  const pauseJob = useCallback((jobId: string) => {
+    abortControllers.current.get(jobId)?.abort()
+  }, [])
+
+  const resumeJob = useCallback((jobId: string) => {
+    setJobs(prev => prev.map(j => (j.id === jobId ? { ...j, status: 'queued' } : j)))
   }, [])
 
   const resolveConflict = useCallback((jobId: string, resolution: ConflictResolution) => {
     resolversRef.current.get(jobId)?.(resolution)
   }, [])
 
+  const resolveJobConflicts = useCallback((jobId: string, resolution: ConflictResolution) => {
+    preResolversRef.current.get(jobId)?.(resolution)
+  }, [])
+
   const dismissJob = useCallback((jobId: string) => {
+    abortControllers.current.get(jobId)?.abort()
+    preResolversRef.current.get(jobId)?.('skip') // unblock any pending pre-scan promise
+    preResolversRef.current.delete(jobId)
     autoSkipRef.current.delete(jobId)
+    onCompleteCallbacks.current.delete(jobId)
+    activeUploads.current.delete(jobId)
     setJobs(prev => prev.filter(j => j.id !== jobId))
   }, [])
 
+  const actions = useMemo<UploadActions>(
+    () => ({ addJob, resolveConflict, resolveJobConflicts, dismissJob, pauseJob, resumeJob }),
+    [addJob, resolveConflict, resolveJobConflicts, dismissJob, pauseJob, resumeJob]
+  )
+
   return (
-    <UploadContext.Provider value={{ jobs, addJob, resolveConflict, dismissJob }}>
-      {children}
-    </UploadContext.Provider>
+    <UploadJobsContext.Provider value={jobs}>
+      <UploadActionsContext.Provider value={actions}>
+        {children}
+      </UploadActionsContext.Provider>
+    </UploadJobsContext.Provider>
   )
 }
+
