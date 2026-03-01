@@ -192,3 +192,30 @@ export const businessSettings = sqliteTable('business_settings', {
   gmailRefreshToken: text('gmail_refresh_token'),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
 })
+
+// ─── Google Auth (Drive OAuth singleton) ──────────────────────────────────────
+export const googleAuth = sqliteTable('google_auth', {
+  id: text('id').primaryKey().default('singleton'),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token').notNull(),
+  expiresAt: integer('expires_at'), // Unix timestamp ms
+  createdAt: text('created_at').default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').default(sql`(datetime('now'))`),
+})
+
+// ─── Footage Management ───────────────────────────────────────────────────────
+export const footageManagement = sqliteTable('footage_management', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  driveFolderId: text('drive_folder_id'),
+  driveFolderUrl: text('drive_folder_url'),
+  rawFootageFolderId: text('raw_footage_folder_id'),
+  audioFolderId: text('audio_folder_id'),
+  bRollFolderId: text('b_roll_folder_id'),
+  graphicsFolderId: text('graphics_folder_id'),
+  musicFolderId: text('music_folder_id'),
+  exportsFolderId: text('exports_folder_id'),
+  projectFilesFolderId: text('project_files_folder_id'),
+  createdAt: text('created_at').default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').default(sql`(datetime('now'))`),
+})

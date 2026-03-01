@@ -1,14 +1,17 @@
 import { db } from '@/lib/db'
-import { businessSettings, pricingConfig } from '@/lib/db/schema'
+import { businessSettings, pricingConfig, googleAuth } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { Topbar } from '@/components/layout/topbar'
 import { SettingsClient } from './settings-client'
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ gmail?: string; frameio?: string }> }) {
-  const settings = await db.select().from(businessSettings).where(eq(businessSettings.id, 'singleton')).get()
-  const pricing = await db.select().from(pricingConfig).orderBy(pricingConfig.category, pricingConfig.configKey).all()
-  const sp = await searchParams
-  const gmailStatus = sp.gmail ?? null
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ gmail?: string; frameio?: string; google?: string }> }) {
+  const [settings, pricing, authRow, sp] = await Promise.all([
+    db.select().from(businessSettings).where(eq(businessSettings.id, 'singleton')).get(),
+    db.select().from(pricingConfig).orderBy(pricingConfig.category, pricingConfig.configKey).all(),
+    db.select({ refreshToken: googleAuth.refreshToken }).from(googleAuth).where(eq(googleAuth.id, 'singleton')).get(),
+    searchParams,
+  ])
+  const googleStatus = sp.google ?? sp.gmail ?? null
   const frameioStatus = sp.frameio ?? null
 
   return (
@@ -17,8 +20,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <SettingsClient
         settings={settings}
         pricing={pricing}
-        isGmailConnected={!!settings?.gmailRefreshToken}
-        gmailStatus={gmailStatus}
+        isGoogleConnected={!!authRow?.refreshToken}
+        googleStatus={googleStatus}
         isFrameioConnected={!!process.env.FRAMEIO_ACCESS_TOKEN}
         frameioStatus={frameioStatus}
       />

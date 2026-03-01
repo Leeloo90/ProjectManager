@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { google } from 'googleapis'
 import { db } from '@/lib/db'
-import { businessSettings } from '@/lib/db/schema'
+import { googleAuth } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 function getOAuth2Client(refreshToken: string) {
   const oauth2Client = new google.auth.OAuth2(
-    process.env.GMAIL_CLIENT_ID,
-    process.env.GMAIL_CLIENT_SECRET,
-    'http://localhost:3000/api/gmail/callback'
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI,
   )
   oauth2Client.setCredentials({ refresh_token: refreshToken })
   return oauth2Client
@@ -55,18 +55,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'label query param required' }, { status: 400 })
   }
 
-  const settings = db
-    .select({ gmailRefreshToken: businessSettings.gmailRefreshToken })
-    .from(businessSettings)
-    .where(eq(businessSettings.id, 'singleton'))
+  const authRow = db
+    .select({ refreshToken: googleAuth.refreshToken })
+    .from(googleAuth)
+    .where(eq(googleAuth.id, 'singleton'))
     .get()
 
-  if (!settings?.gmailRefreshToken) {
-    return NextResponse.json({ error: 'Gmail not connected' }, { status: 401 })
+  if (!authRow?.refreshToken) {
+    return NextResponse.json({ error: 'Google not connected' }, { status: 401 })
   }
 
   try {
-    const auth = getOAuth2Client(settings.gmailRefreshToken)
+    const auth = getOAuth2Client(authRow.refreshToken)
     const gmail = google.gmail({ version: 'v1', auth })
 
     // If fetching full body for a single message

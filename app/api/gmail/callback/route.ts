@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { google } from 'googleapis'
 import { db } from '@/lib/db'
-import { businessSettings } from '@/lib/db/schema'
+import { businessSettings, googleAuth } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 export async function GET(request: NextRequest) {
@@ -47,6 +47,25 @@ export async function GET(request: NextRequest) {
       .update(businessSettings)
       .set({ gmailRefreshToken: tokens.refresh_token })
       .where(eq(businessSettings.id, 'singleton'))
+
+    // Also save to google_auth so Drive integration stays in sync
+    await db
+      .insert(googleAuth)
+      .values({
+        id: 'singleton',
+        accessToken: tokens.access_token ?? null,
+        refreshToken: tokens.refresh_token,
+        expiresAt: tokens.expiry_date ?? null,
+      })
+      .onConflictDoUpdate({
+        target: googleAuth.id,
+        set: {
+          accessToken: tokens.access_token ?? null,
+          refreshToken: tokens.refresh_token,
+          expiresAt: tokens.expiry_date ?? null,
+          updatedAt: new Date().toISOString(),
+        },
+      })
 
     return NextResponse.redirect(new URL('/settings?gmail=connected', request.url))
   } catch (err) {

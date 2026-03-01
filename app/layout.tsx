@@ -3,6 +3,8 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import { Sidebar } from '@/components/layout/sidebar'
 import { ToastProvider } from '@/components/ui/toast'
+import { UploadProvider } from '@/components/upload-context'
+import { UploadOverlay } from '@/components/upload-overlay'
 import { initDB } from './init-db'
 import Script from 'next/script'
 
@@ -26,12 +28,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         )}
         <ToastProvider>
-          <div className="flex min-h-screen">
-            <Sidebar />
-            <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-              {children}
-            </main>
-          </div>
+          <UploadProvider>
+            <div className="flex min-h-screen">
+              <Sidebar />
+              <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                {children}
+              </main>
+            </div>
+            <UploadOverlay />
+          </UploadProvider>
         </ToastProvider>
       </body>
     </html>

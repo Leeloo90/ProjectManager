@@ -168,6 +168,31 @@ export function initializeDatabase() {
       payment_terms_text TEXT DEFAULT 'Payment due within 30 days of invoice date',
       updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS google_auth (
+      id TEXT PRIMARY KEY DEFAULT 'singleton',
+      access_token TEXT,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS footage_management (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      drive_folder_id TEXT,
+      drive_folder_url TEXT,
+      raw_footage_folder_id TEXT,
+      audio_folder_id TEXT,
+      b_roll_folder_id TEXT,
+      graphics_folder_id TEXT,
+      music_folder_id TEXT,
+      exports_folder_id TEXT,
+      project_files_folder_id TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `)
 
   // Add new columns that may not exist on older DBs
@@ -178,6 +203,7 @@ export function initializeDatabase() {
   try { sqlite.exec(`ALTER TABLE business_settings ADD COLUMN gmail_refresh_token TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_project_id TEXT DEFAULT NULL`) } catch {}
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_root_folder_id TEXT DEFAULT NULL`) } catch {}
+  try { sqlite.exec(`ALTER TABLE footage_management ADD COLUMN project_files_folder_id TEXT`) } catch {}
 
   // Recreate shoot_details without UNIQUE constraint on project_id, add shoot_date and shoot_label
   const hasShootLabel = sqlite.prepare(`PRAGMA table_info(shoot_details)`).all().some((col: any) => col.name === 'shoot_label')

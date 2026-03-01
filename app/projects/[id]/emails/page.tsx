@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { projects, businessSettings, productionCompanies } from '@/lib/db/schema'
+import { projects, googleAuth, productionCompanies } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { Topbar } from '@/components/layout/topbar'
@@ -24,13 +24,13 @@ export default async function ProjectEmailsPage({ params }: { params: Promise<{ 
 
   if (!project) notFound()
 
-  const settings = await db
-    .select({ gmailRefreshToken: businessSettings.gmailRefreshToken })
-    .from(businessSettings)
-    .where(eq(businessSettings.id, 'singleton'))
+  const authRow = await db
+    .select({ refreshToken: googleAuth.refreshToken })
+    .from(googleAuth)
+    .where(eq(googleAuth.id, 'singleton'))
     .get()
 
-  const isConnected = !!settings?.gmailRefreshToken
+  const isConnected = !!authRow?.refreshToken
 
   // Build the full Gmail label path: "Company Name/Project Name"
   const labelName = project.companyName

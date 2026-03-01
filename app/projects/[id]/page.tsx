@@ -6,7 +6,7 @@ import { Topbar } from '@/components/layout/topbar'
 import { ProjectDetailClient } from './project-detail-client'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, Mail } from 'lucide-react'
+import { ChevronLeft, HardDrive, Mail } from 'lucide-react'
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -54,6 +54,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         title={project.name}
         actions={
           <div className="flex items-center gap-2">
+            <Link href={`/projects/${id}/footage`}>
+              <Button variant="outline"><HardDrive size={16} /> Footage</Button>
+            </Link>
             <Link href={`/projects/${id}/emails`}>
               <Button variant="outline"><Mail size={16} /> Emails</Button>
             </Link>
