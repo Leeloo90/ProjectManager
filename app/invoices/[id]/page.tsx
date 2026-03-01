@@ -54,8 +54,12 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   const projectDetails: Record<string, { deliverables: any[]; shoot: any | null }> = {}
   for (const p of linkedProjects) {
     const deliv = db.select().from(deliverables).where(eq(deliverables.projectId, p.id)).all()
-    const shoot = db.select().from(shootDetails).where(eq(shootDetails.projectId, p.id)).get()
-    projectDetails[p.id] = { deliverables: deliv, shoot: shoot ?? null }
+    const allShoots = db.select().from(shootDetails).where(eq(shootDetails.projectId, p.id)).all()
+    const shootTotal = allShoots.reduce((s, sh) => s + sh.calculatedShootCost, 0)
+    projectDetails[p.id] = {
+      deliverables: deliv,
+      shoot: allShoots.length > 0 ? { calculatedShootCost: shootTotal } : null,
+    }
   }
 
   // Available projects that can be added to this invoice (finished, same company, not on any invoice)
@@ -80,8 +84,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   const availableProjectCosts: Record<string, number> = {}
   for (const p of availableProjects) {
     const deliv = db.select({ cost: deliverables.calculatedCost }).from(deliverables).where(eq(deliverables.projectId, p.id!)).all()
-    const shoot = db.select({ cost: shootDetails.calculatedShootCost }).from(shootDetails).where(eq(shootDetails.projectId, p.id!)).get()
-    availableProjectCosts[p.id!] = deliv.reduce((s, d) => s + d.cost, 0) + (shoot?.cost ?? 0)
+    const avShoots = db.select({ cost: shootDetails.calculatedShootCost }).from(shootDetails).where(eq(shootDetails.projectId, p.id!)).all()
+    availableProjectCosts[p.id!] = deliv.reduce((s, d) => s + d.cost, 0) + avShoots.reduce((s, sh) => s + sh.cost, 0)
   }
 
   const settings = db.select().from(businessSettings).where(eq(businessSettings.id, 'singleton')).get()

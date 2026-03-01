@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getFrameioToken } from '@/lib/frameio/auth'
+import { getFrameioToken, refreshAccessToken } from '@/lib/frameio/auth'
 
 const BASE = 'https://api.frame.io/v4'
 
@@ -64,14 +64,23 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const token = await getFrameioToken()
+    let token = await getFrameioToken()
     const primaryAccountId = accountIdParam ?? process.env.FRAMEIO_ACCOUNT_ID
 
     if (!primaryAccountId) {
       return NextResponse.json({ error: 'Frame.io not connected' }, { status: 401 })
     }
 
-    const result = await fetchAllFolderItems(primaryAccountId, folderId, token)
+    let result = await fetchAllFolderItems(primaryAccountId, folderId, token)
+
+    // If Frame.io returned 401, the token may have slipped through without refreshing —
+    // force a refresh and retry once before giving up
+    if (!result.ok && result.status === 401) {
+      try {
+        token = await refreshAccessToken()
+        result = await fetchAllFolderItems(primaryAccountId, folderId, token)
+      } catch { /* fall through to error response below */ }
+    }
 
     if (result.ok) {
       return NextResponse.json({ items: shapeItems(result.items), resolvedAccountId: primaryAccountId })

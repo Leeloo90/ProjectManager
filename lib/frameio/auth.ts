@@ -40,7 +40,7 @@ function updateEnvFile(updates: Record<string, string>) {
   }
 }
 
-async function refreshAccessToken(): Promise<string> {
+export async function refreshAccessToken(): Promise<string> {
   const clientId = process.env.FRAMEIO_CLIENT_ID
   const clientSecret = process.env.FRAMEIO_CLIENT_SECRET
   const refreshToken = process.env.FRAMEIO_REFRESH_TOKEN
@@ -96,15 +96,20 @@ export async function getFrameioToken(): Promise<string> {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
 
-    if (testRes.status === 401) {
-      // Token expired — refresh
+    if (testRes.status === 401 || testRes.status === 403) {
+      // Token expired or rejected — refresh
       return await refreshAccessToken()
     }
 
     if (testRes.ok) {
       return accessToken
     }
-    // For other errors just return the token and let the caller handle it
+    // For other non-auth errors, try refreshing anyway to be safe
+    try {
+      return await refreshAccessToken()
+    } catch {
+      return accessToken
+    }
   }
 
   return accessToken

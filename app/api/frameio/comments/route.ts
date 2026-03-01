@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getFrameioToken } from '@/lib/frameio/auth'
+import { getFrameioToken, refreshAccessToken } from '@/lib/frameio/auth'
 
 const BASE = 'https://api.frame.io/v4'
 
@@ -73,14 +73,20 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const token = await getFrameioToken()
+    let token = await getFrameioToken()
     const primaryAccountId = accountIdParam ?? process.env.FRAMEIO_ACCOUNT_ID
 
     if (!primaryAccountId) {
       return NextResponse.json({ error: 'Frame.io not connected' }, { status: 401 })
     }
 
-    const result = await fetchAllComments(primaryAccountId, fileId, token)
+    let result = await fetchAllComments(primaryAccountId, fileId, token)
+
+    // 401 from Frame.io — force refresh and retry once
+    if (!result.ok && result.status === 401) {
+      try { token = await refreshAccessToken() } catch {}
+      result = await fetchAllComments(primaryAccountId, fileId, token)
+    }
 
     if (result.ok) {
       return NextResponse.json(result.comments.map(shapeComment))

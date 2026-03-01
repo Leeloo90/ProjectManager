@@ -7,8 +7,8 @@ import { revalidatePath } from 'next/cache'
 
 function computeProjectCost(projectId: string): number {
   const deliv = db.select({ cost: deliverables.calculatedCost }).from(deliverables).where(eq(deliverables.projectId, projectId)).all()
-  const shoot = db.select({ cost: shootDetails.calculatedShootCost }).from(shootDetails).where(eq(shootDetails.projectId, projectId)).get()
-  return deliv.reduce((s, d) => s + d.cost, 0) + (shoot?.cost ?? 0)
+  const shoots = db.select({ cost: shootDetails.calculatedShootCost }).from(shootDetails).where(eq(shootDetails.projectId, projectId)).all()
+  return deliv.reduce((s, d) => s + d.cost, 0) + shoots.reduce((s, sh) => s + sh.cost, 0)
 }
 
 function computeTotals(rawSubtotal: number, discountType: string, discountValue: number) {

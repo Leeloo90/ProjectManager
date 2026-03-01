@@ -179,6 +179,56 @@ export function initializeDatabase() {
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_project_id TEXT DEFAULT NULL`) } catch {}
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_root_folder_id TEXT DEFAULT NULL`) } catch {}
 
+  // Recreate shoot_details without UNIQUE constraint on project_id, add shoot_date and shoot_label
+  const hasShootLabel = sqlite.prepare(`PRAGMA table_info(shoot_details)`).all().some((col: any) => col.name === 'shoot_label')
+  if (!hasShootLabel) {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS shoot_details_new (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        shoot_date TEXT,
+        shoot_label TEXT,
+        shoot_type TEXT NOT NULL,
+        camera_body TEXT NOT NULL,
+        has_second_shooter INTEGER DEFAULT 0,
+        second_shooter_type TEXT,
+        has_sound_kit INTEGER DEFAULT 0,
+        sound_kit_type TEXT,
+        has_lighting INTEGER DEFAULT 0,
+        lighting_type TEXT,
+        has_gimbal INTEGER DEFAULT 0,
+        gimbal_type TEXT,
+        additional_equipment TEXT,
+        travel_method TEXT DEFAULT 'none',
+        shoot_location TEXT,
+        distance_km REAL,
+        airfare_cost REAL,
+        accommodation_nights INTEGER,
+        accommodation_per_night REAL,
+        calculated_shoot_cost REAL NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+      INSERT INTO shoot_details_new
+        (id, project_id, shoot_date, shoot_label, shoot_type, camera_body,
+         has_second_shooter, second_shooter_type, has_sound_kit, sound_kit_type,
+         has_lighting, lighting_type, has_gimbal, gimbal_type, additional_equipment,
+         travel_method, shoot_location, distance_km, airfare_cost,
+         accommodation_nights, accommodation_per_night, calculated_shoot_cost,
+         created_at, updated_at)
+      SELECT
+        id, project_id, NULL, NULL, shoot_type, camera_body,
+        has_second_shooter, second_shooter_type, has_sound_kit, sound_kit_type,
+        has_lighting, lighting_type, has_gimbal, gimbal_type, additional_equipment,
+        travel_method, shoot_location, distance_km, airfare_cost,
+        accommodation_nights, accommodation_per_night, calculated_shoot_cost,
+        created_at, updated_at
+      FROM shoot_details;
+      DROP TABLE shoot_details;
+      ALTER TABLE shoot_details_new RENAME TO shoot_details;
+    `)
+  }
+
   // Seed business settings if not exists
   const settings = sqlite.prepare('SELECT id FROM business_settings WHERE id = ?').get('singleton')
   if (!settings) {

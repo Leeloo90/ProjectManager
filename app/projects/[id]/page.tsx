@@ -37,7 +37,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   if (!project) notFound()
 
   const projectDeliverables = await db.select().from(deliverables).where(eq(deliverables.projectId, id)).orderBy(deliverables.createdAt).all()
-  const shoot = await db.select().from(shootDetails).where(eq(shootDetails.projectId, id)).get()
+  const allShoots = await db.select().from(shootDetails).where(eq(shootDetails.projectId, id)).orderBy(shootDetails.createdAt).all()
   const projectRevisions = await db.select().from(revisions).where(eq(revisions.projectId, id)).orderBy(revisions.roundNumber).all()
   const pricing = await db.select().from(pricingConfig).all()
   const settings = await db.select().from(businessSettings).where(eq(businessSettings.id, 'singleton')).get()
@@ -45,6 +45,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const allClients = await db.select().from(clients).all()
 
   const pricingMap = Object.fromEntries(pricing.map(p => [p.configKey, p.configValue]))
+  const deliverableTotal = projectDeliverables.reduce((sum, d) => sum + d.calculatedCost, 0)
+  const shootTotal = allShoots.reduce((sum, s) => sum + s.calculatedShootCost, 0)
 
   return (
     <div className="flex flex-col h-full">
@@ -63,9 +65,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       />
       <ProjectDetailClient
         project={project}
-        deliverables={projectDeliverables}
-        shoot={shoot ?? null}
-        revisions={projectRevisions}
+        deliverableCount={projectDeliverables.length}
+        deliverableTotal={deliverableTotal}
+        shootCount={allShoots.length}
+        shootTotal={shootTotal}
+        revisionCount={projectRevisions.length}
         pricingMap={pricingMap}
         settings={settings ?? null}
         companies={allCompanies}

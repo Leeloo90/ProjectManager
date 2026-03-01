@@ -92,7 +92,9 @@ export const deliverables = sqliteTable('deliverables', {
 // ─── Shoot Details ────────────────────────────────────────────────────────────
 export const shootDetails = sqliteTable('shoot_details', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull().unique().references(() => projects.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  shootDate: text('shoot_date'),
+  shootLabel: text('shoot_label'),
   shootType: text('shoot_type', { enum: ['half_day', 'full_day'] }).notNull(),
   cameraBody: text('camera_body', { enum: ['a7siii', 'a7iii'] }).notNull(),
   hasSecondShooter: integer('has_second_shooter', { mode: 'boolean' }).default(false),

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getFrameioToken } from '@/lib/frameio/auth'
+import { getFrameioToken, refreshAccessToken } from '@/lib/frameio/auth'
 
 const BASE = 'https://api.frame.io/v4'
 
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const token = await getFrameioToken()
+    let token = await getFrameioToken()
     const primaryAccountId = accountIdParam ?? process.env.FRAMEIO_ACCOUNT_ID
 
     if (!primaryAccountId) {
@@ -27,6 +27,13 @@ export async function GET(request: NextRequest) {
     }
 
     let res = await tryFetchFile(primaryAccountId, fileId, token)
+
+    // 401 from Frame.io — force refresh and retry once
+    if (res.status === 401) {
+      try { token = await refreshAccessToken() } catch {}
+      res = await tryFetchFile(primaryAccountId, fileId, token)
+    }
+
     let resolvedAccountId = primaryAccountId
 
     // On 404, file belongs to a different account — try all accounts

@@ -29,8 +29,8 @@ export default async function NewInvoicePage() {
   const projectCosts: Record<string, number> = {}
   for (const p of finishedProjects) {
     const deliv = await db.select({ cost: deliverables.calculatedCost }).from(deliverables).where(eq(deliverables.projectId, p.id)).all()
-    const shoot = await db.select({ cost: shootDetails.calculatedShootCost }).from(shootDetails).where(eq(shootDetails.projectId, p.id)).get()
-    const total = deliv.reduce((sum, d) => sum + d.cost, 0) + (shoot?.cost ?? 0)
+    const shoots = await db.select({ cost: shootDetails.calculatedShootCost }).from(shootDetails).where(eq(shootDetails.projectId, p.id)).all()
+    const total = deliv.reduce((sum, d) => sum + d.cost, 0) + shoots.reduce((sum, s) => sum + s.cost, 0)
     projectCosts[p.id] = total
   }
 

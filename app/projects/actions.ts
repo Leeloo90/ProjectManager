@@ -185,16 +185,18 @@ export async function saveDeliverable(projectId: string, deliverableId: string |
   }
 
   revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/deliverables`)
 }
 
 export async function deleteDeliverable(id: string, projectId: string) {
   await db.delete(deliverables).where(eq(deliverables.id, id))
   revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/deliverables`)
 }
 
 // ─── Shoot Details ────────────────────────────────────────────────────────────
 
-export async function saveShootDetails(projectId: string, formData: FormData) {
+export async function saveShootDetails(projectId: string, shootId: string | null, formData: FormData) {
   const pricing = await getPricingMap()
 
   const shootType = formData.get('shootType') as 'half_day' | 'full_day'
@@ -214,6 +216,8 @@ export async function saveShootDetails(projectId: string, formData: FormData) {
   const airfareCost = parseFloat(formData.get('airfareCost') as string) || null
   const accommodationNights = parseInt(formData.get('accommodationNights') as string) || null
   const accommodationPerNight = parseFloat(formData.get('accommodationPerNight') as string) || null
+  const shootDate = formData.get('shootDate') as string || null
+  const shootLabel = formData.get('shootLabel') as string || null
 
   const dayKey = shootType === 'half_day' ? 'half' : 'full'
 
@@ -261,10 +265,10 @@ export async function saveShootDetails(projectId: string, formData: FormData) {
     shootCost += accommodationNights * accommodationPerNight
   }
 
-  const existing = await db.select().from(shootDetails).where(eq(shootDetails.projectId, projectId)).get()
-
   const data = {
     projectId,
+    shootDate,
+    shootLabel,
     shootType,
     cameraBody,
     hasSecondShooter,
@@ -285,18 +289,20 @@ export async function saveShootDetails(projectId: string, formData: FormData) {
     calculatedShootCost: Math.round(shootCost * 100) / 100,
   }
 
-  if (existing) {
-    await db.update(shootDetails).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(shootDetails.projectId, projectId))
+  if (shootId) {
+    await db.update(shootDetails).set({ ...data, updatedAt: new Date().toISOString() }).where(and(eq(shootDetails.id, shootId), eq(shootDetails.projectId, projectId)))
   } else {
     await db.insert(shootDetails).values({ id: generateId(), ...data })
   }
 
   revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/shoots`)
 }
 
-export async function deleteShootDetails(projectId: string) {
-  await db.delete(shootDetails).where(eq(shootDetails.projectId, projectId))
+export async function deleteShootDetails(shootId: string, projectId: string) {
+  await db.delete(shootDetails).where(and(eq(shootDetails.id, shootId), eq(shootDetails.projectId, projectId)))
   revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/shoots`)
 }
 
 // ─── Revisions ────────────────────────────────────────────────────────────────
@@ -319,11 +325,13 @@ export async function addRevision(projectId: string, formData: FormData) {
     description: `Revision round ${roundNumber} logged`,
   })
   revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/revisions`)
 }
 
 export async function updateRevisionStatus(id: string, projectId: string, status: string) {
   await db.update(revisions).set({ status: status as any, updatedAt: new Date().toISOString() }).where(eq(revisions.id, id))
   revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/revisions`)
 }
 
 export async function updateDeliverableNameAndCost(deliverableId: string, name: string, calculatedCost: number) {
