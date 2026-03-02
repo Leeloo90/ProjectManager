@@ -179,6 +179,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             startTransition(() => {
               setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, errorCount: ec } : j)))
             })
+            await new Promise<void>(r => setTimeout(r, 0))
             continue
           }
         }
@@ -194,6 +195,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             startTransition(() => {
               setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, skipCount: sc } : j)))
             })
+            await new Promise<void>(r => setTimeout(r, 0))
             continue
           }
 
@@ -209,6 +211,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             startTransition(() => {
               setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, skipCount: sc } : j)))
             })
+            await new Promise<void>(r => setTimeout(r, 0))
             continue
           }
 
@@ -247,6 +250,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           return
         }
       }
+      // Yield to the event loop between files — lets React flush pending transitions
+      // and the browser handle user interactions before the next upload begins
+      await new Promise<void>(r => setTimeout(r, 0))
     }
 
     autoSkipRef.current.delete(job.id)
