@@ -4,6 +4,7 @@ import { projects, deliverables, shootDetails, revisions, activityLog, pricingCo
 import { eq, and } from 'drizzle-orm'
 import { generateId, getDurationBracket, editPriceKey, colourGradingKey, subtitleKey } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
+import { getFrameioToken, refreshAccessToken } from '@/lib/frameio/auth'
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
@@ -307,30 +308,152 @@ export async function deleteShootDetails(shootId: string, projectId: string) {
 
 // ─── Revisions ────────────────────────────────────────────────────────────────
 
-export async function addRevision(projectId: string, formData: FormData) {
-  const existingRevisions = await db.select().from(revisions).where(eq(revisions.projectId, projectId)).all()
-  const roundNumber = existingRevisions.length + 1
+export async function updateRevisionNotes(revisionId: string, notes: string) {
+  await db.update(revisions)
+    .set({ notes, updatedAt: new Date().toISOString() })
+    .where(eq(revisions.id, revisionId))
+}
+
+export async function addRevisionEntry(
+  projectId: string,
+  data: {
+    category: 'INT' | 'EXT'
+    title: string
+    frameioAssetId?: string
+    frameioShareLink?: string
+    thumbnailUrl?: string
+  },
+) {
+  const existing = await db.select().from(revisions).where(eq(revisions.projectId, projectId)).all()
+  const orderId = existing.length + 1
+  const intCount = existing.filter(r => r.category === 'INT').length
+  const extCount = existing.filter(r => r.category === 'EXT').length
+
   await db.insert(revisions).values({
     id: generateId(),
     projectId,
-    roundNumber,
-    dateRequested: formData.get('dateRequested') as string,
-    description: formData.get('description') as string,
-    status: 'pending',
+    orderId,
+    category: data.category,
+    intNumber: data.category === 'INT' ? intCount + 1 : null,
+    extNumber: data.category === 'EXT' ? extCount + 1 : null,
+    title: data.title,
+    frameioAssetId: data.frameioAssetId ?? null,
+    frameioShareLink: data.frameioShareLink ?? null,
+    thumbnailUrl: data.thumbnailUrl ?? null,
   })
-  await db.insert(activityLog).values({
-    id: generateId(),
-    projectId,
-    eventType: 'revision_logged',
-    description: `Revision round ${roundNumber} logged`,
-  })
-  revalidatePath(`/projects/${projectId}`)
   revalidatePath(`/projects/${projectId}/revisions`)
 }
 
-export async function updateRevisionStatus(id: string, projectId: string, status: string) {
-  await db.update(revisions).set({ status: status as any, updatedAt: new Date().toISOString() }).where(eq(revisions.id, id))
-  revalidatePath(`/projects/${projectId}`)
+export async function promoteRevision(revisionId: string, projectId: string) {
+  const all = await db.select().from(revisions).where(eq(revisions.projectId, projectId)).all()
+  if (all.length === 0) return
+  const latest = all.reduce((a, b) => (a.orderId > b.orderId ? a : b))
+  if (latest.id !== revisionId || latest.category !== 'INT') return
+
+  const extCount = all.filter(r => r.category === 'EXT').length
+  await db.update(revisions)
+    .set({ category: 'EXT', intNumber: null, extNumber: extCount + 1, updatedAt: new Date().toISOString() })
+    .where(eq(revisions.id, revisionId))
+  revalidatePath(`/projects/${projectId}/revisions`)
+}
+
+export async function demoteRevision(revisionId: string, projectId: string) {
+  const all = await db.select().from(revisions).where(eq(revisions.projectId, projectId)).all()
+  if (all.length === 0) return
+  const latest = all.reduce((a, b) => (a.orderId > b.orderId ? a : b))
+  if (latest.id !== revisionId || latest.category !== 'EXT') return
+
+  const intCount = all.filter(r => r.category === 'INT').length
+  await db.update(revisions)
+    .set({ category: 'INT', extNumber: null, intNumber: intCount + 1, updatedAt: new Date().toISOString() })
+    .where(eq(revisions.id, revisionId))
+
+  // Renumber all remaining EXT rows in chronological order
+  const remainingExt = all
+    .filter(r => r.category === 'EXT' && r.id !== revisionId)
+    .sort((a, b) => a.orderId - b.orderId)
+  for (let i = 0; i < remainingExt.length; i++) {
+    await db.update(revisions)
+      .set({ extNumber: i + 1, updatedAt: new Date().toISOString() })
+      .where(eq(revisions.id, remainingExt[i].id))
+  }
+  revalidatePath(`/projects/${projectId}/revisions`)
+}
+
+export async function refreshRevisionComments(projectId: string) {
+  const primaryAccountId = process.env.FRAMEIO_ACCOUNT_ID
+  if (!primaryAccountId) return
+
+  const all = await db.select().from(revisions).where(eq(revisions.projectId, projectId)).all()
+  const withAssets = all.filter(r => r.frameioAssetId)
+  if (withAssets.length === 0) return
+
+  let token: string
+  try {
+    token = await getFrameioToken()
+  } catch {
+    return
+  }
+
+  const BASE = 'https://api.frame.io/v4'
+
+  // Mirror exactly what /api/frameio/comments does: paginate with include=owner,replies,
+  // handle 401 refresh, and fall back to other accounts on 404.
+  async function fetchCommentCount(accountId: string, fileId: string): Promise<number | null> {
+    let count = 0
+    let cursor: string | null =
+      `${BASE}/accounts/${accountId}/files/${fileId}/comments?include=owner,replies`
+
+    while (cursor) {
+      const url = cursor
+      cursor = null
+      let res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+
+      if (res.status === 401) {
+        try { token = await refreshAccessToken() } catch { return null }
+        res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      }
+      if (!res.ok) return res.status === 404 ? null : count
+
+      const data = await res.json()
+      const items: unknown[] = data.data ?? (Array.isArray(data) ? data : [])
+      count += items.length
+
+      const nextPath: string | undefined = data.links?.next
+      if (nextPath) cursor = nextPath.startsWith('http') ? nextPath : `${BASE}${nextPath}`
+    }
+    return count
+  }
+
+  for (const revision of withAssets) {
+    try {
+      let count = await fetchCommentCount(primaryAccountId, revision.frameioAssetId!)
+
+      // 404 means the file is on a different account — try all accounts (same as the proxy route)
+      if (count === null) {
+        const accountsRes = await fetch(`${BASE}/accounts`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (accountsRes.ok) {
+          const accountsData = await accountsRes.json()
+          const accounts: { id: string }[] = accountsData.data ?? []
+          for (const account of accounts) {
+            if (account.id === primaryAccountId) continue
+            const alt = await fetchCommentCount(account.id, revision.frameioAssetId!)
+            if (alt !== null) { count = alt; break }
+          }
+        }
+      }
+
+      if (count !== null) {
+        await db.update(revisions)
+          .set({ commentCount: count, updatedAt: new Date().toISOString() })
+          .where(eq(revisions.id, revision.id))
+      }
+    } catch {
+      // skip this revision on error
+    }
+  }
   revalidatePath(`/projects/${projectId}/revisions`)
 }
 

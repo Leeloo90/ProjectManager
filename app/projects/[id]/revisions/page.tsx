@@ -14,13 +14,19 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
   const project = await db.select({
     id: projects.id,
     name: projects.name,
-    status: projects.status,
     includedRevisionRounds: projects.includedRevisionRounds,
+    frameioProjectId: projects.frameioProjectId,
+    frameioRootFolderId: projects.frameioRootFolderId,
   }).from(projects).where(eq(projects.id, id)).get()
 
   if (!project) notFound()
 
-  const projectRevisions = await db.select().from(revisions).where(eq(revisions.projectId, id)).orderBy(revisions.roundNumber).all()
+  const projectRevisions = await db
+    .select()
+    .from(revisions)
+    .where(eq(revisions.projectId, id))
+    .orderBy(revisions.orderId)
+    .all()
 
   return (
     <div className="flex flex-col h-full">
@@ -34,9 +40,10 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
       />
       <RevisionsClient
         projectId={id}
-        projectStatus={project.status}
         includedRevisionRounds={project.includedRevisionRounds ?? 2}
         revisions={projectRevisions}
+        frameioLinked={!!project.frameioProjectId}
+        frameioRootFolderId={project.frameioRootFolderId ?? null}
       />
     </div>
   )

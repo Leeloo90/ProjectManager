@@ -121,10 +121,16 @@ export const shootDetails = sqliteTable('shoot_details', {
 export const revisions = sqliteTable('revisions', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  roundNumber: integer('round_number').notNull(),
-  dateRequested: text('date_requested').notNull(),
-  description: text('description').notNull(),
-  status: text('status', { enum: ['pending', 'in_progress', 'complete'] }).default('pending'),
+  orderId: integer('order_id').notNull(),           // global chronological sequence (1, 2, 3...)
+  category: text('category', { enum: ['INT', 'EXT'] }).notNull(),
+  intNumber: integer('int_number'),                 // assigned if INT, never changes
+  extNumber: integer('ext_number'),                 // assigned if EXT, recalculates on promote/demote
+  title: text('title').notNull(),
+  frameioAssetId: text('frameio_asset_id'),
+  frameioShareLink: text('frameio_share_link'),
+  thumbnailUrl: text('thumbnail_url'),
+  commentCount: integer('comment_count').default(0),
+  notes: text('notes'),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
 })

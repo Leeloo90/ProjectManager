@@ -38,7 +38,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   const projectDeliverables = await db.select().from(deliverables).where(eq(deliverables.projectId, id)).orderBy(deliverables.createdAt).all()
   const allShoots = await db.select().from(shootDetails).where(eq(shootDetails.projectId, id)).orderBy(shootDetails.createdAt).all()
-  const projectRevisions = await db.select().from(revisions).where(eq(revisions.projectId, id)).orderBy(revisions.roundNumber).all()
+  const projectRevisions = await db.select().from(revisions).where(eq(revisions.projectId, id)).orderBy(revisions.orderId).all()
   const pricing = await db.select().from(pricingConfig).all()
   const settings = await db.select().from(businessSettings).where(eq(businessSettings.id, 'singleton')).get()
   const allCompanies = await db.select().from(productionCompanies).all()

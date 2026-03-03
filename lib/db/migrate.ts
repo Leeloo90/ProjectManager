@@ -204,6 +204,30 @@ export function initializeDatabase() {
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_project_id TEXT DEFAULT NULL`) } catch {}
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_root_folder_id TEXT DEFAULT NULL`) } catch {}
   try { sqlite.exec(`ALTER TABLE footage_management ADD COLUMN project_files_folder_id TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE revisions ADD COLUMN notes TEXT`) } catch {}
+
+  // Migrate revisions table to new revision system
+  const hasOrderId = sqlite.prepare(`PRAGMA table_info(revisions)`).all().some((col: any) => col.name === 'order_id')
+  if (!hasOrderId) {
+    sqlite.exec(`
+      DROP TABLE IF EXISTS revisions;
+      CREATE TABLE revisions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        order_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        int_number INTEGER,
+        ext_number INTEGER,
+        title TEXT NOT NULL,
+        frameio_asset_id TEXT,
+        frameio_share_link TEXT,
+        thumbnail_url TEXT,
+        comment_count INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+    `)
+  }
 
   // Recreate shoot_details without UNIQUE constraint on project_id, add shoot_date and shoot_label
   const hasShootLabel = sqlite.prepare(`PRAGMA table_info(shoot_details)`).all().some((col: any) => col.name === 'shoot_label')
