@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { projects, clients, productionCompanies, deliverables, shootDetails, revisions, pricingConfig, businessSettings, } from '@/lib/db/schema'
+import { projects, clients, productionCompanies, deliverables, shootDetails, revisions, pricingConfig, businessSettings, todoTasks } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { Topbar } from '@/components/layout/topbar'
@@ -44,6 +44,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const allCompanies = await db.select().from(productionCompanies).all()
   const allClients = await db.select().from(clients).all()
 
+  const allTodoTasks = await db.select({ completed: todoTasks.completed }).from(todoTasks).where(eq(todoTasks.projectId, id)).all()
+  const todoTotal = allTodoTasks.length
+  const todoCompleted = allTodoTasks.filter(t => t.completed).length
+  const extRevisionCount = projectRevisions.filter(r => r.category === 'EXT').length
+
   const pricingMap = Object.fromEntries(pricing.map(p => [p.configKey, p.configValue]))
   const deliverableTotal = projectDeliverables.reduce((sum, d) => sum + d.calculatedCost, 0)
   const shootTotal = allShoots.reduce((sum, s) => sum + s.calculatedShootCost, 0)
@@ -67,12 +72,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         }
       />
       <ProjectDetailClient
+        todoTotal={todoTotal}
+        todoCompleted={todoCompleted}
         project={project}
         deliverableCount={projectDeliverables.length}
         deliverableTotal={deliverableTotal}
         shootCount={allShoots.length}
         shootTotal={shootTotal}
         revisionCount={projectRevisions.length}
+        extRevisionCount={extRevisionCount}
         pricingMap={pricingMap}
         settings={settings ?? null}
         companies={allCompanies}

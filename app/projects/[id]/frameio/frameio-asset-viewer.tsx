@@ -333,11 +333,14 @@ export function FrameioAssetViewer({
   }
 
   function handleVideoClick() {
-    if (!commentMode) return
     const v = videoRef.current
     if (!v) return
-    v.pause()
-    setCommentInput({ visible: true, timecode: secondsToTimecode(v.currentTime), text: '' })
+    if (commentMode) {
+      v.pause()
+      setCommentInput({ visible: true, timecode: secondsToTimecode(v.currentTime), text: '' })
+    } else {
+      v.paused ? v.play() : v.pause()
+    }
   }
 
   async function handlePostTimedComment() {
@@ -445,7 +448,7 @@ export function FrameioAssetViewer({
                   onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime ?? 0)}
                   onDurationChange={() => setDuration(videoRef.current?.duration ?? 0)}
                   onError={() => { fetchPlaybackUrl() }}
-                  style={{ cursor: commentMode ? 'crosshair' : 'default' }}
+                  style={{ cursor: commentMode ? 'crosshair' : 'pointer' }}
                 />
 
                 {/* Comment mode overlay hint */}

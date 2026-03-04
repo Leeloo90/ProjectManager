@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { projects, revisions } from '@/lib/db/schema'
+import { projects, revisions, deliverables } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { Topbar } from '@/components/layout/topbar'
@@ -28,6 +28,12 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
     .orderBy(revisions.orderId)
     .all()
 
+  const projectDeliverables = await db
+    .select({ id: deliverables.id, name: deliverables.name })
+    .from(deliverables)
+    .where(eq(deliverables.projectId, id))
+    .all()
+
   return (
     <div className="flex flex-col h-full">
       <Topbar
@@ -42,6 +48,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
         projectId={id}
         includedRevisionRounds={project.includedRevisionRounds ?? 2}
         revisions={projectRevisions}
+        deliverables={projectDeliverables}
         frameioLinked={!!project.frameioProjectId}
         frameioRootFolderId={project.frameioRootFolderId ?? null}
       />

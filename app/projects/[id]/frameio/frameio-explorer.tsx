@@ -213,10 +213,10 @@ export function FrameioExplorer({
                       onMouseEnter={e => (e.currentTarget.style.background = 'rgb(38 50 65)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'rgb(31 41 55)')}
                     >
-                      <div className="aspect-video w-full bg-gray-900 flex items-center justify-center relative overflow-hidden">
+                      <div className="aspect-video w-full bg-black flex items-center justify-center relative overflow-hidden">
                         {item.thumb_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.thumb_url} alt={item.name} className="w-full h-full object-cover" />
+                          <img src={item.thumb_url} alt={item.name} className="w-full h-full object-contain" />
                         ) : (
                           <ItemIcon item={item} />
                         )}
@@ -262,10 +262,10 @@ export function FrameioExplorer({
                 className="w-full flex items-center gap-3 p-2 rounded hover:bg-gray-800 transition-colors text-left"
               >
                 {/* Thumbnail or icon */}
-                <div className="w-12 h-9 bg-gray-900 rounded overflow-hidden flex items-center justify-center flex-shrink-0">
+                <div className="w-12 h-9 bg-black rounded overflow-hidden flex items-center justify-center flex-shrink-0">
                   {item.thumb_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.thumb_url} alt={item.name} className="w-full h-full object-cover" />
+                    <img src={item.thumb_url} alt={item.name} className="w-full h-full object-contain" />
                   ) : (
                     <ItemIcon item={item} size={20} />
                   )}

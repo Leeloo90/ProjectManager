@@ -18,7 +18,7 @@ import {
 } from '../actions'
 import {
   Edit, Trash2, AlertTriangle, ExternalLink, Camera, Package,
-  RotateCcw, Film, ChevronRight, Loader2,
+  RotateCcw, Film, ChevronRight, Loader2, CheckSquare,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
@@ -107,6 +107,9 @@ export function ProjectDetailClient({
   shootCount,
   shootTotal,
   revisionCount,
+  extRevisionCount,
+  todoTotal,
+  todoCompleted,
   pricingMap,
   settings,
   companies,
@@ -118,6 +121,9 @@ export function ProjectDetailClient({
   shootCount: number
   shootTotal: number
   revisionCount: number
+  extRevisionCount: number
+  todoTotal: number
+  todoCompleted: number
   pricingMap: Record<string, number>
   settings: any
   companies: any[]
@@ -136,7 +142,8 @@ export function ProjectDetailClient({
   const isLocked = ['invoiced', 'paid'].includes(project.status)
   const projectTotal = deliverableTotal + shootTotal
   const includedRounds = project.includedRevisionRounds ?? 2
-  const revisionWarning = revisionCount > includedRounds
+  const usedRevisionRounds = Math.max(0, extRevisionCount - 1) // first EXT = First Draft, doesn't count
+  const revisionWarning = usedRevisionRounds > includedRounds
 
   function handleStatusChange(newStatus: string) {
     startTransition(async () => {
@@ -171,7 +178,7 @@ export function ProjectDetailClient({
       {revisionWarning && (
         <div className="flex items-center gap-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
           <AlertTriangle size={18} className="text-yellow-600 shrink-0" />
-          <p>This project has exceeded the included revision rounds ({includedRounds} included, {revisionCount} logged). Consider adding a revision charge.</p>
+          <p>This project has exceeded the included revision rounds ({includedRounds} included, {usedRevisionRounds} used). Consider adding a revision charge.</p>
         </div>
       )}
 
@@ -232,8 +239,28 @@ export function ProjectDetailClient({
         </Card>
       )}
 
-      {/* Summary cards 2×2 grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* Summary cards 3-column grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+        {/* To Do */}
+        <Link href={`/projects/${project.id}/todo`} className="block">
+          <Card className="h-full hover:border-[#1e3a5f] hover:shadow-sm transition-all cursor-pointer">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                <CheckSquare size={15} /> To Do
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-end justify-between">
+              <div>
+                <p className="text-2xl font-bold text-gray-900">{todoTotal}</p>
+                <p className="text-xs text-gray-500">
+                  {todoTotal === 0 ? 'No tasks yet' : `${todoCompleted}/${todoTotal} completed`}
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-gray-400" />
+            </CardContent>
+          </Card>
+        </Link>
 
         {/* Frame.io */}
         <Card className="flex flex-col">
@@ -331,8 +358,10 @@ export function ProjectDetailClient({
             </CardHeader>
             <CardContent className="flex items-end justify-between">
               <div>
-                <p className="text-2xl font-bold text-gray-900">{revisionCount}</p>
-                <p className="text-xs text-gray-500">{includedRounds} included</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {revisionCount === 0 ? 'No revisions' : 'Revisions available'}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">{includedRounds} rounds included</p>
               </div>
               <ChevronRight size={16} className="text-gray-400" />
             </CardContent>

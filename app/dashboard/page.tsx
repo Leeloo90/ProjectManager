@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { projects, invoices, deliverables, shootDetails, activityLog, clients, productionCompanies } from '@/lib/db/schema'
+import { projects, invoices, deliverables, shootDetails, activityLog, clients, productionCompanies, todoTasks } from '@/lib/db/schema'
 import { eq, and, ne, or, inArray, sql, desc, gte, lte } from 'drizzle-orm'
 import { Topbar } from '@/components/layout/topbar'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate, getStatusBadgeClass, getStatusConfig, ACTIVE_STATUSES } from '@/lib/utils'
 import { DashboardChart } from './chart'
 import Link from 'next/link'
-import { AlertTriangle, Clock, FileText, TrendingUp, DollarSign, Calendar } from 'lucide-react'
+import { AlertTriangle, Clock, FileText, TrendingUp, DollarSign, Calendar, CheckSquare } from 'lucide-react'
 import { format, isAfter, isBefore, addDays, startOfMonth, endOfMonth, parseISO } from 'date-fns'
 
 function FolderKanban2({ size, className }: { size: number; className: string }) {
@@ -104,6 +104,15 @@ async function getDashboardData() {
     .where(eq(projects.status, 'finished'))
     .all()
 
+  // Projects with outstanding to-do tasks
+  const outstandingTodoRows = await db
+    .select({ projectId: todoTasks.projectId })
+    .from(todoTasks)
+    .where(eq(todoTasks.completed, false))
+    .all()
+  const outstandingTodoCount = new Set(outstandingTodoRows.map(r => r.projectId)).size
+  const outstandingTaskCount = outstandingTodoRows.length
+
   // Revenue chart — last 12 months
   const chartData: { month: string; revenue: number }[] = []
   for (let i = 11; i >= 0; i--) {
@@ -118,6 +127,8 @@ async function getDashboardData() {
   }
 
   return {
+    outstandingTodoCount,
+    outstandingTaskCount,
     activeCount: activeProjects.length,
     overdueCount: overdueProjects.length,
     awaitingInvoiceCount: awaitingInvoice.length,
@@ -137,6 +148,15 @@ export default async function DashboardPage() {
   const data = await getDashboardData()
 
   const summaryCards = [
+    {
+      label: 'To Do',
+      value: data.outstandingTodoCount,
+      sub: `projects (${data.outstandingTaskCount} tasks)`,
+      icon: CheckSquare,
+      colour: 'text-violet-600',
+      bg: 'bg-violet-50',
+      href: '/todo',
+    },
     {
       label: 'Active Projects',
       value: data.activeCount,
@@ -197,20 +217,24 @@ export default async function DashboardPage() {
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
         {/* Summary cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
           {summaryCards.map((card, i) => {
             const Icon = card.icon
-            return (
-              <Card key={i} className={card.highlight ? 'ring-2 ring-red-300' : ''}>
+            const inner = (
+              <Card key={i} className={`h-full${card.highlight ? ' ring-2 ring-red-300' : ''}${card.href ? ' hover:shadow-sm transition-shadow cursor-pointer' : ''}`}>
                 <CardContent className="p-4">
                   <div className={`inline-flex p-2 rounded-lg ${card.bg} mb-2`}>
                     <Icon size={18} className={card.colour} />
                   </div>
                   <p className="text-xs text-gray-500 mb-1">{card.label}</p>
                   <p className="text-xl font-bold text-gray-900">{card.value}</p>
+                  {'sub' in card && <p className="text-xs text-gray-400 mt-0.5">{card.sub}</p>}
                 </CardContent>
               </Card>
             )
+            return card.href
+              ? <Link key={i} href={card.href} className="block">{inner}</Link>
+              : <div key={i}>{inner}</div>
           })}
         </div>
 

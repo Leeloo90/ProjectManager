@@ -1,7 +1,7 @@
 'use server'
 import { db } from '@/lib/db'
-import { projects, deliverables, shootDetails, revisions, activityLog, pricingConfig, businessSettings } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { projects, deliverables, shootDetails, revisions, activityLog, pricingConfig, businessSettings, todoGroups, todoTasks } from '@/lib/db/schema'
+import { eq, and, isNull } from 'drizzle-orm'
 import { generateId, getDurationBracket, editPriceKey, colourGradingKey, subtitleKey } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
 import { getFrameioToken, refreshAccessToken } from '@/lib/frameio/auth'
@@ -319,19 +319,36 @@ export async function addRevisionEntry(
   data: {
     category: 'INT' | 'EXT'
     title: string
+    deliverableId?: string | null
     frameioAssetId?: string
     frameioShareLink?: string
     thumbnailUrl?: string
   },
 ) {
-  const existing = await db.select().from(revisions).where(eq(revisions.projectId, projectId)).all()
-  const orderId = existing.length + 1
-  const intCount = existing.filter(r => r.category === 'INT').length
-  const extCount = existing.filter(r => r.category === 'EXT').length
+  // orderId is project-wide (chronological across all groups)
+  const allProjectRevisions = await db.select({ orderId: revisions.orderId })
+    .from(revisions).where(eq(revisions.projectId, projectId)).all()
+  const orderId = allProjectRevisions.length + 1
+
+  // int/ext numbering scoped to the same deliverable group (null = unassigned)
+  const groupRevisions = await db.select()
+    .from(revisions)
+    .where(
+      and(
+        eq(revisions.projectId, projectId),
+        data.deliverableId
+          ? eq(revisions.deliverableId, data.deliverableId)
+          : isNull(revisions.deliverableId),
+      )
+    )
+    .all()
+  const intCount = groupRevisions.filter(r => r.category === 'INT').length
+  const extCount = groupRevisions.filter(r => r.category === 'EXT').length
 
   await db.insert(revisions).values({
     id: generateId(),
     projectId,
+    deliverableId: data.deliverableId ?? null,
     orderId,
     category: data.category,
     intNumber: data.category === 'INT' ? intCount + 1 : null,
@@ -344,32 +361,67 @@ export async function addRevisionEntry(
   revalidatePath(`/projects/${projectId}/revisions`)
 }
 
-export async function promoteRevision(revisionId: string, projectId: string) {
-  const all = await db.select().from(revisions).where(eq(revisions.projectId, projectId)).all()
-  if (all.length === 0) return
-  const latest = all.reduce((a, b) => (a.orderId > b.orderId ? a : b))
-  if (latest.id !== revisionId || latest.category !== 'INT') return
-
-  const extCount = all.filter(r => r.category === 'EXT').length
+export async function assignRevisionToDeliverable(
+  revisionId: string,
+  deliverableId: string | null,
+  projectId: string,
+) {
   await db.update(revisions)
-    .set({ category: 'EXT', intNumber: null, extNumber: extCount + 1, updatedAt: new Date().toISOString() })
+    .set({ deliverableId, updatedAt: new Date().toISOString() })
     .where(eq(revisions.id, revisionId))
   revalidatePath(`/projects/${projectId}/revisions`)
 }
 
-export async function demoteRevision(revisionId: string, projectId: string) {
-  const all = await db.select().from(revisions).where(eq(revisions.projectId, projectId)).all()
-  if (all.length === 0) return
-  const latest = all.reduce((a, b) => (a.orderId > b.orderId ? a : b))
-  if (latest.id !== revisionId || latest.category !== 'EXT') return
+export async function promoteRevision(revisionId: string, projectId: string) {
+  // Fetch target to know its deliverable group
+  const target = await db.select().from(revisions).where(eq(revisions.id, revisionId)).get()
+  if (!target || target.category !== 'INT') return
 
-  const intCount = all.filter(r => r.category === 'INT').length
+  // Scope all operations to the same deliverable group
+  const groupWhere = and(
+    eq(revisions.projectId, projectId),
+    target.deliverableId
+      ? eq(revisions.deliverableId, target.deliverableId)
+      : isNull(revisions.deliverableId),
+  )
+  const group = await db.select().from(revisions).where(groupWhere).all()
+
+  const extCount = group.filter(r => r.category === 'EXT').length
+  await db.update(revisions)
+    .set({ category: 'EXT', intNumber: null, extNumber: extCount + 1, updatedAt: new Date().toISOString() })
+    .where(eq(revisions.id, revisionId))
+
+  // Renumber remaining INT rows in this group
+  const remainingInt = group
+    .filter(r => r.category === 'INT' && r.id !== revisionId)
+    .sort((a, b) => a.orderId - b.orderId)
+  for (let i = 0; i < remainingInt.length; i++) {
+    await db.update(revisions)
+      .set({ intNumber: i + 1, updatedAt: new Date().toISOString() })
+      .where(eq(revisions.id, remainingInt[i].id))
+  }
+  revalidatePath(`/projects/${projectId}/revisions`)
+}
+
+export async function demoteRevision(revisionId: string, projectId: string) {
+  const target = await db.select().from(revisions).where(eq(revisions.id, revisionId)).get()
+  if (!target || target.category !== 'EXT') return
+
+  const groupWhere = and(
+    eq(revisions.projectId, projectId),
+    target.deliverableId
+      ? eq(revisions.deliverableId, target.deliverableId)
+      : isNull(revisions.deliverableId),
+  )
+  const group = await db.select().from(revisions).where(groupWhere).all()
+
+  const intCount = group.filter(r => r.category === 'INT').length
   await db.update(revisions)
     .set({ category: 'INT', extNumber: null, intNumber: intCount + 1, updatedAt: new Date().toISOString() })
     .where(eq(revisions.id, revisionId))
 
-  // Renumber all remaining EXT rows in chronological order
-  const remainingExt = all
+  // Renumber remaining EXT rows in this group
+  const remainingExt = group
     .filter(r => r.category === 'EXT' && r.id !== revisionId)
     .sort((a, b) => a.orderId - b.orderId)
   for (let i = 0; i < remainingExt.length; i++) {
@@ -425,29 +477,54 @@ export async function refreshRevisionComments(projectId: string) {
     return count
   }
 
+  // Fetch all accounts once — used as fallback when a file returns 404 on the primary account
+  let allAccounts: { id: string }[] = []
+  try {
+    const accountsRes = await fetch(`${BASE}/accounts`, { headers: { Authorization: `Bearer ${token}` } })
+    if (accountsRes.ok) {
+      const accountsData = await accountsRes.json()
+      allAccounts = accountsData.data ?? []
+    }
+  } catch { /* ignore */ }
+
+  async function fetchFileMeta(accountId: string, fileId: string): Promise<string | null> {
+    const res = await fetch(`${BASE}/accounts/${accountId}/files/${fileId}?include=media_links.thumbnail`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const file = data.data ?? {}
+    return file.media_links?.thumbnail?.download_url ?? file.cover_image_url ?? file.thumb_url ?? null
+  }
+
   for (const revision of withAssets) {
     try {
       let count = await fetchCommentCount(primaryAccountId, revision.frameioAssetId!)
+      let thumbUrl = await fetchFileMeta(primaryAccountId, revision.frameioAssetId!)
 
-      // 404 means the file is on a different account — try all accounts (same as the proxy route)
-      if (count === null) {
-        const accountsRes = await fetch(`${BASE}/accounts`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (accountsRes.ok) {
-          const accountsData = await accountsRes.json()
-          const accounts: { id: string }[] = accountsData.data ?? []
-          for (const account of accounts) {
-            if (account.id === primaryAccountId) continue
+      // 404 means the file is on a different account — try all accounts
+      if (count === null || thumbUrl === null) {
+        for (const account of allAccounts) {
+          if (account.id === primaryAccountId) continue
+          if (count === null) {
             const alt = await fetchCommentCount(account.id, revision.frameioAssetId!)
-            if (alt !== null) { count = alt; break }
+            if (alt !== null) count = alt
           }
+          if (thumbUrl === null) {
+            const altThumb = await fetchFileMeta(account.id, revision.frameioAssetId!)
+            if (altThumb !== null) thumbUrl = altThumb
+          }
+          if (count !== null && thumbUrl !== null) break
         }
       }
 
-      if (count !== null) {
+      if (count !== null || thumbUrl !== null) {
         await db.update(revisions)
-          .set({ commentCount: count, updatedAt: new Date().toISOString() })
+          .set({
+            ...(count !== null ? { commentCount: count } : {}),
+            ...(thumbUrl !== null ? { thumbnailUrl: thumbUrl } : {}),
+            updatedAt: new Date().toISOString(),
+          })
           .where(eq(revisions.id, revision.id))
       }
     } catch {
@@ -487,4 +564,124 @@ export async function unlinkFrameioProject(projectId: string): Promise<void> {
     .set({ frameioProjectId: null, frameioRootFolderId: null, updatedAt: new Date().toISOString() })
     .where(eq(projects.id, projectId))
   revalidatePath(`/projects/${projectId}`)
+}
+
+// ─── Todo ─────────────────────────────────────────────────────────────────────
+
+export async function getTodoData(projectId: string) {
+  const groups = await db.select().from(todoGroups).where(eq(todoGroups.projectId, projectId)).orderBy(todoGroups.position).all()
+  const tasks = await db.select().from(todoTasks).where(eq(todoTasks.projectId, projectId)).orderBy(todoTasks.position).all()
+  return { groups, tasks }
+}
+
+export async function addTodoGroup(projectId: string, title: string, deliverableId?: string) {
+  const existingGroups = await db.select({ position: todoGroups.position }).from(todoGroups).where(eq(todoGroups.projectId, projectId)).all()
+  const existingStandalone = await db.select({ position: todoTasks.position }).from(todoTasks).where(and(eq(todoTasks.projectId, projectId), isNull(todoTasks.groupId))).all()
+  const allPositions = [...existingGroups.map(g => g.position), ...existingStandalone.map(t => t.position)]
+  const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 0
+  await db.insert(todoGroups).values({
+    id: crypto.randomUUID(),
+    projectId,
+    deliverableId: deliverableId ?? null,
+    title,
+    position: maxPos + 1,
+  })
+  revalidatePath(`/projects/${projectId}/todo`)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function addTodoTask(projectId: string, title: string, groupId?: string) {
+  const existing = await db.select({ position: todoTasks.position }).from(todoTasks)
+    .where(groupId
+      ? and(eq(todoTasks.projectId, projectId), eq(todoTasks.groupId, groupId))
+      : and(eq(todoTasks.projectId, projectId), isNull(todoTasks.groupId))
+    ).all()
+  let maxPos = existing.length > 0 ? Math.max(...existing.map(t => t.position)) : 0
+  // For standalone tasks, use global position space
+  if (!groupId) {
+    const existingGroups = await db.select({ position: todoGroups.position }).from(todoGroups).where(eq(todoGroups.projectId, projectId)).all()
+    const allPositions = [...existing.map(t => t.position), ...existingGroups.map(g => g.position)]
+    maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 0
+  }
+  await db.insert(todoTasks).values({
+    id: crypto.randomUUID(),
+    projectId,
+    groupId: groupId ?? null,
+    title,
+    completed: false,
+    position: maxPos + 1,
+  })
+  revalidatePath(`/projects/${projectId}/todo`)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+const DEFAULT_TASK_TITLES = ['First Draft', 'Revision', 'Colour Grade', 'Sound', 'Finishing', 'Masters', 'Upload']
+
+export async function addDefaultTasks(groupId: string, projectId: string, deliverableId: string) {
+  const deliverable = await db.select().from(deliverables).where(eq(deliverables.id, deliverableId)).get()
+  const existingTasks = await db.select().from(todoTasks).where(eq(todoTasks.groupId, groupId)).all()
+  const existingTitles = new Set(existingTasks.map(t => t.title))
+  const defaults = [...DEFAULT_TASK_TITLES]
+  if (deliverable && (deliverable.additionalFormats ?? 0) > 0) defaults.push('Variations')
+  const toAdd = defaults.filter(t => !existingTitles.has(t))
+  let nextPos = existingTasks.length > 0 ? Math.max(...existingTasks.map(t => t.position)) : 0
+  for (const title of toAdd) {
+    nextPos++
+    await db.insert(todoTasks).values({
+      id: crypto.randomUUID(),
+      projectId,
+      groupId,
+      title,
+      completed: false,
+      position: nextPos,
+    })
+  }
+  revalidatePath(`/projects/${projectId}/todo`)
+}
+
+export async function toggleTodoTask(taskId: string, projectId: string) {
+  const task = await db.select().from(todoTasks).where(eq(todoTasks.id, taskId)).get()
+  if (!task) return
+  await db.update(todoTasks).set({ completed: !task.completed, updatedAt: new Date().toISOString() }).where(eq(todoTasks.id, taskId))
+  revalidatePath(`/projects/${projectId}/todo`)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function renameTodoItem(id: string, type: 'group' | 'task', newTitle: string, projectId: string) {
+  if (type === 'group') {
+    await db.update(todoGroups).set({ title: newTitle, updatedAt: new Date().toISOString() }).where(eq(todoGroups.id, id))
+  } else {
+    await db.update(todoTasks).set({ title: newTitle, updatedAt: new Date().toISOString() }).where(eq(todoTasks.id, id))
+  }
+  revalidatePath(`/projects/${projectId}/todo`)
+}
+
+export async function deleteTodoGroup(groupId: string, projectId: string) {
+  await db.delete(todoGroups).where(eq(todoGroups.id, groupId))
+  revalidatePath(`/projects/${projectId}/todo`)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function deleteTodoTask(taskId: string, projectId: string) {
+  await db.delete(todoTasks).where(eq(todoTasks.id, taskId))
+  revalidatePath(`/projects/${projectId}/todo`)
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function reorderTodoItems(
+  projectId: string,
+  updates: { id: string; type: 'group' | 'task'; position: number; groupId?: string }[]
+) {
+  for (const u of updates) {
+    if (u.type === 'group') {
+      await db.update(todoGroups).set({ position: u.position, updatedAt: new Date().toISOString() }).where(eq(todoGroups.id, u.id))
+    } else {
+      await db.update(todoTasks).set({
+        position: u.position,
+        groupId: u.groupId !== undefined ? u.groupId : undefined,
+        updatedAt: new Date().toISOString(),
+      }).where(eq(todoTasks.id, u.id))
+    }
+  }
+  revalidatePath(`/projects/${projectId}/todo`)
 }

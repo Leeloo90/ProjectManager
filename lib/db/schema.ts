@@ -121,6 +121,7 @@ export const shootDetails = sqliteTable('shoot_details', {
 export const revisions = sqliteTable('revisions', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  deliverableId: text('deliverable_id').references(() => deliverables.id, { onDelete: 'set null' }),
   orderId: integer('order_id').notNull(),           // global chronological sequence (1, 2, 3...)
   category: text('category', { enum: ['INT', 'EXT'] }).notNull(),
   intNumber: integer('int_number'),                 // assigned if INT, never changes
@@ -205,6 +206,28 @@ export const googleAuth = sqliteTable('google_auth', {
   accessToken: text('access_token'),
   refreshToken: text('refresh_token').notNull(),
   expiresAt: integer('expires_at'), // Unix timestamp ms
+  createdAt: text('created_at').default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').default(sql`(datetime('now'))`),
+})
+
+// ─── Todo ─────────────────────────────────────────────────────────────────────
+export const todoGroups = sqliteTable('todo_groups', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  deliverableId: text('deliverable_id').references(() => deliverables.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  position: integer('position').notNull(),
+  createdAt: text('created_at').default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').default(sql`(datetime('now'))`),
+})
+
+export const todoTasks = sqliteTable('todo_tasks', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  groupId: text('group_id').references(() => todoGroups.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  completed: integer('completed', { mode: 'boolean' }).default(false),
+  position: integer('position').notNull(),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
 })

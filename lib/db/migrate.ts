@@ -205,6 +205,29 @@ export function initializeDatabase() {
   try { sqlite.exec(`ALTER TABLE projects ADD COLUMN frameio_root_folder_id TEXT DEFAULT NULL`) } catch {}
   try { sqlite.exec(`ALTER TABLE footage_management ADD COLUMN project_files_folder_id TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE revisions ADD COLUMN notes TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE revisions ADD COLUMN deliverable_id TEXT REFERENCES deliverables(id)`) } catch {}
+
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS todo_groups (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      deliverable_id TEXT REFERENCES deliverables(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS todo_tasks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      group_id TEXT REFERENCES todo_groups(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      completed INTEGER DEFAULT 0,
+      position INTEGER NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `)
 
   // Migrate revisions table to new revision system
   const hasOrderId = sqlite.prepare(`PRAGMA table_info(revisions)`).all().some((col: any) => col.name === 'order_id')

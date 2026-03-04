@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { formatDate } from '@/lib/utils'
 import {
   addRevisionEntry,
+  assignRevisionToDeliverable,
   promoteRevision,
   demoteRevision,
   refreshRevisionComments,
@@ -19,7 +20,7 @@ import {
   Plus, RefreshCw, ChevronDown, ChevronUp, Copy, Check,
   AlertTriangle, ArrowUp, ArrowDown, MessageSquare,
   ExternalLink, Film, Link2Off, Folder, Image, FileText,
-  ChevronLeft, Upload, FolderOpen, Loader2, CloudUpload,
+  ChevronLeft, Upload, FolderOpen, Loader2, CloudUpload, ChevronRight,
 } from 'lucide-react'
 
 type Revision = {
@@ -34,8 +35,11 @@ type Revision = {
   thumbnailUrl: string | null
   commentCount: number | null
   notes: string | null
+  deliverableId: string | null
   createdAt: string | null
 }
+
+type Deliverable = { id: string; name: string }
 
 type BrowseItem = {
   id: string
@@ -74,12 +78,9 @@ function formatTimecode(tc: string | null | undefined): string {
 }
 
 function getLabel(revision: Pick<Revision, 'category' | 'intNumber' | 'extNumber'>) {
-  if (revision.category === 'INT') {
-    return `Internal ${revision.intNumber ?? ''}`
-  }
-  // EXT: first delivery = "First Draft", subsequent = "Revision N"
-  if (revision.extNumber === 1) return 'First Draft'
-  return `Revision ${(revision.extNumber ?? 2) - 1}`
+  const num = revision.category === 'INT' ? revision.intNumber : revision.extNumber
+  if (num === 1) return 'First Draft'
+  return `Revision ${(num ?? 2) - 1}`
 }
 
 function CategoryBadge({ category }: { category: 'INT' | 'EXT' }) {
@@ -189,18 +190,19 @@ function CommentColumn({
 function RevisionCard({
   revision,
   previousRevision,
-  isLatest,
   projectId,
+  deliverables,
 }: {
   revision: Revision
   previousRevision: Pick<Revision, 'frameioAssetId' | 'category' | 'intNumber' | 'extNumber'> | null
-  isLatest: boolean
   projectId: string
+  deliverables: Deliverable[]
 }) {
   const { toast } = useToast()
   const router = useRouter()
   const [expanded, setExpanded] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [thumbBroken, setThumbBroken] = useState(false)
 
   // Notes
   const [localNotes, setLocalNotes] = useState(revision.notes ?? '')
@@ -298,9 +300,14 @@ function RevisionCard({
 
         {/* Row 2: thumbnail + title */}
         <div className="flex gap-3 items-start">
-          <div className="w-20 h-12 rounded bg-gray-700 flex-shrink-0 overflow-hidden">
-            {revision.thumbnailUrl ? (
-              <img src={revision.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+          <div className="w-20 h-12 rounded bg-black flex-shrink-0 overflow-hidden">
+            {revision.frameioAssetId && !thumbBroken ? (
+              <img
+                src={`/api/frameio/thumbnail?assetId=${encodeURIComponent(revision.frameioAssetId)}`}
+                alt=""
+                className="w-full h-full object-contain"
+                onError={() => setThumbBroken(true)}
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <Film size={16} className="text-gray-500" />
@@ -389,32 +396,48 @@ function RevisionCard({
           </div>
         )}
 
-        {/* Promote / Demote — only on the latest card */}
-        {isLatest && (
-          <div className="pt-1 border-t border-gray-700">
-            {revision.category === 'INT' ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-1.5 text-xs border-blue-700/50 text-blue-400 hover:bg-blue-900/30"
-                onClick={handlePromote}
-                disabled={isPending}
-              >
-                <ArrowUp size={13} /> Promote to External
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-1.5 text-xs border-gray-600 text-gray-400 hover:bg-gray-700"
-                onClick={handleDemote}
-                disabled={isPending}
-              >
-                <ArrowDown size={13} /> Demote to Internal
-              </Button>
-            )}
+        {/* Assign to deliverable */}
+        {deliverables.length > 0 && (
+          <div className="flex items-center gap-2 pt-1 border-t border-gray-700/50">
+            <span className="text-xs text-gray-500 flex-shrink-0">Deliverable:</span>
+            <select
+              className="flex-1 bg-transparent text-xs text-gray-400 focus:outline-none cursor-pointer hover:text-gray-200 transition-colors"
+              value={revision.deliverableId ?? ''}
+              onChange={e => {
+                const val = e.target.value
+                startTransition(async () => {
+                  await assignRevisionToDeliverable(revision.id, val || null, projectId)
+                  router.refresh()
+                })
+              }}
+            >
+              {deliverables.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
           </div>
         )}
+
+        {/* Promote / Demote */}
+        <div className="flex justify-end">
+          {revision.category === 'INT' ? (
+            <button
+              onClick={handlePromote}
+              disabled={isPending}
+              className="flex items-center gap-1 text-xs text-blue-500/70 hover:text-blue-300 hover:bg-blue-900/30 px-2 py-1 rounded transition-colors disabled:opacity-40"
+            >
+              <ArrowUp size={11} /> Promote to External
+            </button>
+          ) : (
+            <button
+              onClick={handleDemote}
+              disabled={isPending}
+              className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-300 hover:bg-blue-900/30 px-2 py-1 rounded transition-colors disabled:opacity-40"
+            >
+              <ArrowDown size={11} /> Demote to Internal
+            </button>
+          )}
+        </div>
 
       </CardContent>
     </Card>
@@ -522,9 +545,9 @@ function FrameioAssetBrowser({
                 onClick={() => item.type === 'folder' ? navigateInto(item) : onSelect(item)}
                 className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-700 transition-colors text-left"
               >
-                <div className="w-10 h-7 rounded bg-gray-700 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                <div className="w-10 h-7 rounded bg-black flex-shrink-0 overflow-hidden flex items-center justify-center">
                   {item.thumb_url && item.type !== 'folder' ? (
-                    <img src={item.thumb_url} alt="" className="w-full h-full object-cover" />
+                    <img src={item.thumb_url} alt="" className="w-full h-full object-contain" />
                   ) : (
                     <BrowseItemIcon item={item} />
                   )}
@@ -598,6 +621,7 @@ function UploadDropZone({ onFileSelected }: { onFileSelected: (file: File) => vo
 function AssetConfirmation({
   asset,
   projectId,
+  deliverableId,
   frameioRootFolderId,
   onBack,
   onClose,
@@ -610,6 +634,7 @@ function AssetConfirmation({
     file?: File
   }
   projectId: string
+  deliverableId: string | null
   frameioRootFolderId: string | null
   onBack: () => void
   onClose: () => void
@@ -668,6 +693,7 @@ function AssetConfirmation({
           frameioAssetId: assetId ?? undefined,
           frameioShareLink: shareLink ?? undefined,
           thumbnailUrl: thumbnailUrl ?? undefined,
+          deliverableId: deliverableId ?? undefined,
         })
 
         toast('Revision added', 'success')
@@ -757,10 +783,12 @@ type DialogMode = 'pick-source' | 'browse' | 'upload' | 'confirm'
 
 function AddRevisionDialog({
   projectId,
+  deliverableId,
   frameioRootFolderId,
   onClose,
 }: {
   projectId: string
+  deliverableId: string | null
   frameioRootFolderId: string | null
   onClose: () => void
 }) {
@@ -794,6 +822,7 @@ function AddRevisionDialog({
       <AssetConfirmation
         asset={selectedAsset}
         projectId={projectId}
+        deliverableId={deliverableId}
         frameioRootFolderId={frameioRootFolderId}
         onBack={() => setMode(selectedAsset.isUpload ? 'upload' : 'browse')}
         onClose={onClose}
@@ -872,18 +901,74 @@ function AddRevisionDialog({
   )
 }
 
+// ─── Deliverable Group Card ───────────────────────────────────────────────
+
+function DeliverableGroupCard({
+  name,
+  revisions,
+  includedRevisionRounds,
+  onClick,
+}: {
+  name: string
+  revisions: Revision[]
+  includedRevisionRounds: number
+  onClick: () => void
+}) {
+  const extCount = revisions.filter(r => r.category === 'EXT').length
+  const usedRounds = Math.max(0, extCount - 1)
+  const extraRounds = Math.max(0, usedRounds - includedRevisionRounds)
+  const latestRevision = revisions.length > 0 ? revisions[revisions.length - 1] : null
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-4 p-4 bg-gray-800 border border-gray-700 rounded-xl hover:border-gray-500 transition-colors text-left"
+    >
+      <div className="w-16 h-10 rounded bg-black flex-shrink-0 overflow-hidden flex items-center justify-center">
+        {latestRevision?.frameioAssetId ? (
+          <img
+            src={`/api/frameio/thumbnail?assetId=${encodeURIComponent(latestRevision.frameioAssetId)}`}
+            alt=""
+            className="w-full h-full object-contain"
+          />
+        ) : (
+          <Film size={14} className="text-gray-500" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-white font-medium text-sm">{name}</p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          {revisions.length === 0
+            ? 'No revisions yet'
+            : `${revisions.length} revision${revisions.length !== 1 ? 's' : ''} · ${extCount} EXT${usedRounds > 0 ? ` · ${usedRounds}/${includedRevisionRounds} rounds used` : ''}`}
+        </p>
+        {latestRevision && (
+          <p className="text-xs text-gray-500 mt-0.5 truncate">
+            {latestRevision.title}
+            <span className="text-gray-600"> · {latestRevision.commentCount ?? 0} comment{(latestRevision.commentCount ?? 0) !== 1 ? 's' : ''}</span>
+          </p>
+        )}
+      </div>
+      {extraRounds > 0 && <AlertTriangle size={15} className="text-yellow-400 shrink-0" />}
+      <ChevronRight size={16} className="text-gray-500 shrink-0" />
+    </button>
+  )
+}
+
 // ─── Main client ──────────────────────────────────────────────────────────
 
 export function RevisionsClient({
   projectId,
   includedRevisionRounds,
   revisions,
+  deliverables,
   frameioLinked,
   frameioRootFolderId,
 }: {
   projectId: string
   includedRevisionRounds: number
   revisions: Revision[]
+  deliverables: Deliverable[]
   frameioLinked: boolean
   frameioRootFolderId: string | null
 }) {
@@ -891,6 +976,7 @@ export function RevisionsClient({
   const router = useRouter()
   const [addDialog, setAddDialog] = useState(false)
   const [isRefreshing, startRefreshTransition] = useTransition()
+  const [selectedGroup, setSelectedGroup] = useState<null | string>(null)
 
   if (!frameioLinked) {
     return (
@@ -915,15 +1001,6 @@ export function RevisionsClient({
     )
   }
 
-  // Billing: EXT count − 1 = client revision rounds used (first EXT is initial delivery)
-  const extCount = revisions.filter(r => r.category === 'EXT').length
-  const usedRounds = Math.max(0, extCount - 1)
-  const extraRounds = Math.max(0, usedRounds - includedRevisionRounds)
-
-  const latestRevision = revisions.length > 0
-    ? revisions.reduce((a, b) => (a.orderId > b.orderId ? a : b))
-    : null
-
   function handleRefreshComments() {
     startRefreshTransition(async () => {
       await refreshRevisionComments(projectId)
@@ -932,18 +1009,104 @@ export function RevisionsClient({
     })
   }
 
+  const getDeliverableRevisions = (id: string) => revisions.filter(r => r.deliverableId === id)
+
+  function getRoundInfo(group: Revision[]) {
+    const extCount = group.filter(r => r.category === 'EXT').length
+    const usedRounds = Math.max(0, extCount - 1)
+    const extraRounds = Math.max(0, usedRounds - includedRevisionRounds)
+    return { extCount, usedRounds, extraRounds }
+  }
+
+  // ── Top-level picker ──────────────────────────────────────────────────────
+  if (selectedGroup === null) {
+    return (
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-gray-900 font-semibold text-lg">Revisions</h2>
+            <p className="text-gray-500 text-sm mt-0.5">Select a deliverable to manage its revision history.</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-gray-300 border-gray-600 hover:bg-gray-700"
+            onClick={handleRefreshComments}
+            disabled={isRefreshing}
+          >
+            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+            Refresh Comments
+          </Button>
+        </div>
+
+        <div className="space-y-3">
+          {deliverables.map(d => (
+            <DeliverableGroupCard
+              key={d.id}
+              name={d.name}
+              revisions={getDeliverableRevisions(d.id)}
+              includedRevisionRounds={includedRevisionRounds}
+              onClick={() => setSelectedGroup(d.id)}
+            />
+          ))}
+
+          {deliverables.length === 0 && (
+            <p className="text-xs text-gray-500 text-center py-2">
+              No deliverables yet — add them to the project to start tracking per-deliverable rounds.
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Drill-down view ───────────────────────────────────────────────────────
+  const currentIndex = deliverables.findIndex(d => d.id === selectedGroup)
+  const currentDeliverableName = deliverables[currentIndex]?.name ?? 'Deliverable'
+  const prevDeliverable = currentIndex > 0 ? deliverables[currentIndex - 1] : null
+  const nextDeliverable = currentIndex < deliverables.length - 1 ? deliverables[currentIndex + 1] : null
+  const groupRevisions = getDeliverableRevisions(selectedGroup!)
+  const { usedRounds, extraRounds } = getRoundInfo(groupRevisions)
+
   return (
     <div className="flex-1 overflow-y-auto p-6">
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h2 className="text-white font-semibold text-lg">Revisions</h2>
-          <p className="text-gray-400 text-sm mt-0.5">
-            {usedRounds} of {includedRevisionRounds} included client rounds used
-          </p>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSelectedGroup(null)}
+            className="text-gray-400 hover:text-gray-600 transition-colors p-1 -ml-1 rounded hover:bg-gray-100"
+            aria-label="Back to deliverables"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <div>
+            <h2 className="text-gray-900 font-semibold text-lg">{currentDeliverableName}</h2>
+            <p className="text-gray-500 text-sm mt-0.5">
+              {usedRounds} of {includedRevisionRounds} included client rounds used
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => prevDeliverable && setSelectedGroup(prevDeliverable.id)}
+              disabled={!prevDeliverable}
+              className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
+              aria-label="Previous deliverable"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <button
+              onClick={() => nextDeliverable && setSelectedGroup(nextDeliverable.id)}
+              disabled={!nextDeliverable}
+              className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
+              aria-label="Next deliverable"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -973,7 +1136,7 @@ export function RevisionsClient({
       )}
 
       {/* Empty state */}
-      {revisions.length === 0 ? (
+      {groupRevisions.length === 0 ? (
         <div className="flex flex-col items-center gap-4 py-16 text-center">
           <Film size={36} className="text-gray-600" />
           <div>
@@ -989,21 +1152,28 @@ export function RevisionsClient({
         </div>
       ) : (
         <div className="space-y-3">
-          {revisions.map((revision, index) => (
-            <RevisionCard
-              key={revision.id}
-              revision={revision}
-              previousRevision={index > 0 ? revisions[index - 1] : null}
-              isLatest={latestRevision?.id === revision.id}
-              projectId={projectId}
-            />
-          ))}
+          {groupRevisions.map((revision, index) => {
+            const prevSameCategory = groupRevisions
+              .slice(0, index)
+              .filter(r => r.category === revision.category)
+              .at(-1) ?? null
+            return (
+              <RevisionCard
+                key={revision.id}
+                revision={revision}
+                previousRevision={prevSameCategory}
+                projectId={projectId}
+                deliverables={deliverables}
+              />
+            )
+          })}
         </div>
       )}
 
       <Dialog open={addDialog} onClose={() => setAddDialog(false)} title="Add Revision">
         <AddRevisionDialog
           projectId={projectId}
+          deliverableId={selectedGroup}
           frameioRootFolderId={frameioRootFolderId}
           onClose={() => setAddDialog(false)}
         />
