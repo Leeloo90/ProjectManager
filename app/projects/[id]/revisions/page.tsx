@@ -29,7 +29,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
     .all()
 
   const projectDeliverables = await db
-    .select({ id: deliverables.id, name: deliverables.name })
+    .select({ id: deliverables.id, name: deliverables.name, postStatus: deliverables.postStatus })
     .from(deliverables)
     .where(eq(deliverables.projectId, id))
     .all()

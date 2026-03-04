@@ -314,6 +314,40 @@ export async function updateRevisionNotes(revisionId: string, notes: string) {
     .where(eq(revisions.id, revisionId))
 }
 
+export async function deleteRevision(revisionId: string, projectId: string) {
+  const target = await db.select().from(revisions).where(eq(revisions.id, revisionId)).get()
+  if (!target) return
+
+  await db.delete(revisions).where(eq(revisions.id, revisionId))
+
+  // Renumber siblings in the same deliverable group
+  const groupWhere = and(
+    eq(revisions.projectId, projectId),
+    target.deliverableId
+      ? eq(revisions.deliverableId, target.deliverableId)
+      : isNull(revisions.deliverableId),
+  )
+  const remaining = await db.select().from(revisions).where(groupWhere).orderBy(revisions.orderId).all()
+
+  const intRevs = remaining.filter(r => r.category === 'INT')
+  const extRevs = remaining.filter(r => r.category === 'EXT')
+  for (let i = 0; i < intRevs.length; i++) {
+    await db.update(revisions).set({ intNumber: i + 1 }).where(eq(revisions.id, intRevs[i].id))
+  }
+  for (let i = 0; i < extRevs.length; i++) {
+    await db.update(revisions).set({ extNumber: i + 1 }).where(eq(revisions.id, extRevs[i].id))
+  }
+
+  // Reset deliverable post-status to not_started only if no revisions remain
+  if (target.deliverableId && remaining.length === 0) {
+    await db.update(deliverables)
+      .set({ postStatus: 'not_started', updatedAt: new Date().toISOString() })
+      .where(eq(deliverables.id, target.deliverableId))
+  }
+
+  revalidatePath(`/projects/${projectId}/revisions`)
+}
+
 export async function addRevisionEntry(
   projectId: string,
   data: {
@@ -358,6 +392,16 @@ export async function addRevisionEntry(
     frameioShareLink: data.frameioShareLink ?? null,
     thumbnailUrl: data.thumbnailUrl ?? null,
   })
+
+  // Auto-update deliverable postStatus
+  if (data.deliverableId) {
+    const newStatus = data.category === 'INT' ? 'awaiting_feedback_int' : 'awaiting_feedback_ext'
+    await db.update(deliverables)
+      .set({ postStatus: newStatus, updatedAt: new Date().toISOString() })
+      .where(eq(deliverables.id, data.deliverableId))
+    revalidatePath(`/projects/${projectId}`)
+  }
+
   revalidatePath(`/projects/${projectId}/revisions`)
 }
 
@@ -531,7 +575,30 @@ export async function refreshRevisionComments(projectId: string) {
       // skip this revision on error
     }
   }
+  // Auto-advance postStatus for deliverables that now have feedback
+  const freshRevisions = await db.select().from(revisions).where(eq(revisions.projectId, projectId)).all()
+  const projectDelivs = await db.select({ id: deliverables.id, postStatus: deliverables.postStatus })
+    .from(deliverables).where(eq(deliverables.projectId, projectId)).all()
+  for (const d of projectDelivs) {
+    if (d.postStatus === 'awaiting_feedback_int') {
+      const latestInt = freshRevisions
+        .filter(r => r.deliverableId === d.id && r.category === 'INT')
+        .sort((a, b) => b.orderId - a.orderId)[0]
+      if (latestInt && (latestInt.commentCount ?? 0) > 0) {
+        await db.update(deliverables).set({ postStatus: 'feedback_available_int', updatedAt: new Date().toISOString() }).where(eq(deliverables.id, d.id))
+      }
+    } else if (d.postStatus === 'awaiting_feedback_ext') {
+      const latestExt = freshRevisions
+        .filter(r => r.deliverableId === d.id && r.category === 'EXT')
+        .sort((a, b) => b.orderId - a.orderId)[0]
+      if (latestExt && (latestExt.commentCount ?? 0) > 0) {
+        await db.update(deliverables).set({ postStatus: 'feedback_available_ext', updatedAt: new Date().toISOString() }).where(eq(deliverables.id, d.id))
+      }
+    }
+  }
+
   revalidatePath(`/projects/${projectId}/revisions`)
+  revalidatePath(`/projects/${projectId}`)
 }
 
 export async function updateDeliverableNameAndCost(deliverableId: string, name: string, calculatedCost: number) {
@@ -544,6 +611,58 @@ export async function updateDeliverableNameAndCost(deliverableId: string, name: 
     revalidatePath('/projects')
     revalidatePath('/dashboard')
   }
+}
+
+export async function advanceDeliverablePostStatus(deliverableId: string, projectId: string): Promise<void> {
+  const d = await db.select().from(deliverables).where(eq(deliverables.id, deliverableId)).get()
+  if (!d) return
+  const status = d.postStatus ?? 'not_started'
+
+  if (status === 'awaiting_feedback_int' || status === 'feedback_available_int') {
+    // Promote the latest INT revision to EXT
+    const groupRevs = await db.select().from(revisions)
+      .where(and(eq(revisions.projectId, projectId), eq(revisions.deliverableId, deliverableId)))
+      .all()
+    const latestInt = groupRevs
+      .filter(r => r.category === 'INT')
+      .sort((a, b) => b.orderId - a.orderId)[0]
+    if (latestInt) await promoteRevision(latestInt.id, projectId)
+    await db.update(deliverables)
+      .set({ postStatus: 'awaiting_feedback_ext', updatedAt: new Date().toISOString() })
+      .where(eq(deliverables.id, deliverableId))
+  } else if (status === 'awaiting_feedback_ext' || status === 'feedback_available_ext') {
+    await db.update(deliverables)
+      .set({ postStatus: 'approved', updatedAt: new Date().toISOString() })
+      .where(eq(deliverables.id, deliverableId))
+    // Check if all deliverables on this project are now approved
+    const allDelivs = await db.select({ postStatus: deliverables.postStatus })
+      .from(deliverables).where(eq(deliverables.projectId, projectId)).all()
+    const allApproved = allDelivs.length > 0 && allDelivs.every(d => d.postStatus === 'approved')
+    if (allApproved) {
+      const proj = await db.select({ status: projects.status }).from(projects).where(eq(projects.id, projectId)).get()
+      if (proj && !['final_delivery', 'finished', 'invoiced', 'paid'].includes(proj.status)) {
+        await db.update(projects)
+          .set({ status: 'final_delivery', updatedAt: new Date().toISOString() })
+          .where(eq(projects.id, projectId))
+        await db.insert(activityLog).values({
+          id: generateId(),
+          projectId,
+          eventType: 'status_changed',
+          description: 'All deliverables approved — project advanced to Final Delivery',
+        })
+      }
+    }
+  } else if (status === 'approved') {
+    // Allow reopening for another revision cycle
+    await db.update(deliverables)
+      .set({ postStatus: 'awaiting_feedback_int', updatedAt: new Date().toISOString() })
+      .where(eq(deliverables.id, deliverableId))
+  }
+
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/revisions`)
+  revalidatePath('/projects')
+  revalidatePath('/dashboard')
 }
 
 // ─── Frame.io ─────────────────────────────────────────────────────────────────

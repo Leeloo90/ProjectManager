@@ -85,6 +85,9 @@ export const deliverables = sqliteTable('deliverables', {
   }).default('none'),
   calculatedCost: real('calculated_cost').notNull(),
   notes: text('notes'),
+  postStatus: text('post_status', {
+    enum: ['not_started', 'awaiting_feedback_int', 'feedback_available_int', 'awaiting_feedback_ext', 'feedback_available_ext', 'approved'],
+  }).default('not_started'),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
 })

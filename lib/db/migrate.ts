@@ -206,6 +206,7 @@ export function initializeDatabase() {
   try { sqlite.exec(`ALTER TABLE footage_management ADD COLUMN project_files_folder_id TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE revisions ADD COLUMN notes TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE revisions ADD COLUMN deliverable_id TEXT REFERENCES deliverables(id)`) } catch {}
+  try { sqlite.exec(`ALTER TABLE deliverables ADD COLUMN post_status TEXT DEFAULT 'not_started'`) } catch {}
 
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS todo_groups (

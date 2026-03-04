@@ -10,17 +10,17 @@ import { formatDate } from '@/lib/utils'
 import {
   addRevisionEntry,
   assignRevisionToDeliverable,
-  promoteRevision,
-  demoteRevision,
   refreshRevisionComments,
   updateRevisionNotes,
+  advanceDeliverablePostStatus,
+  deleteRevision,
 } from '../../actions'
 import Link from 'next/link'
 import {
   Plus, RefreshCw, ChevronDown, ChevronUp, Copy, Check,
-  AlertTriangle, ArrowUp, ArrowDown, MessageSquare,
+  AlertTriangle, MessageSquare,
   ExternalLink, Film, Link2Off, Folder, Image, FileText,
-  ChevronLeft, Upload, FolderOpen, Loader2, CloudUpload, ChevronRight,
+  ChevronLeft, Upload, FolderOpen, Loader2, CloudUpload, ChevronRight, Trash2,
 } from 'lucide-react'
 
 type Revision = {
@@ -39,7 +39,26 @@ type Revision = {
   createdAt: string | null
 }
 
-type Deliverable = { id: string; name: string }
+type Deliverable = { id: string; name: string; postStatus: string | null }
+
+const POST_STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  not_started:            { label: 'Not Started',   className: 'bg-gray-700 text-gray-400' },
+  awaiting_feedback_int:  { label: 'Awaiting INT',  className: 'bg-blue-900 text-blue-300' },
+  feedback_available_int: { label: 'INT Ready',     className: 'bg-orange-900 text-orange-300' },
+  awaiting_feedback_ext:  { label: 'Awaiting EXT',  className: 'bg-purple-900 text-purple-300' },
+  feedback_available_ext: { label: 'Client Feedback Available', className: 'bg-amber-900 text-amber-300' },
+  approved:               { label: 'Approved',      className: 'bg-green-900 text-green-300' },
+}
+
+// Light-background variant for drill-down header
+const POST_STATUS_BADGE_LIGHT: Record<string, { label: string; className: string }> = {
+  not_started:            { label: 'Not Started',   className: 'bg-gray-100 text-gray-500' },
+  awaiting_feedback_int:  { label: 'Awaiting INT',  className: 'bg-blue-100 text-blue-700' },
+  feedback_available_int: { label: 'INT Ready',     className: 'bg-orange-100 text-orange-700' },
+  awaiting_feedback_ext:  { label: 'Awaiting EXT',  className: 'bg-purple-100 text-purple-700' },
+  feedback_available_ext: { label: 'Client Feedback Available', className: 'bg-amber-100 text-amber-700' },
+  approved:               { label: 'Approved',      className: 'bg-green-100 text-green-700' },
+}
 
 type BrowseItem = {
   id: string
@@ -204,6 +223,30 @@ function RevisionCard({
   const [isPending, startTransition] = useTransition()
   const [thumbBroken, setThumbBroken] = useState(false)
 
+  // Context menu + delete confirm
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isDeleting, startDeleteTransition] = useTransition()
+
+  function handleContextMenu(e: React.MouseEvent) {
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }
+
+  function handleDelete() {
+    setContextMenu(null)
+    setShowDeleteConfirm(true)
+  }
+
+  function confirmDelete() {
+    startDeleteTransition(async () => {
+      await deleteRevision(revision.id, projectId)
+      toast('Revision deleted', 'success')
+      router.refresh()
+    })
+    setShowDeleteConfirm(false)
+  }
+
   // Notes
   const [localNotes, setLocalNotes] = useState(revision.notes ?? '')
   const [savedNotes, setSavedNotes] = useState(revision.notes ?? '')
@@ -260,29 +303,53 @@ function RevisionCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded])
 
-  function handlePromote() {
-    startTransition(async () => {
-      await promoteRevision(revision.id, projectId)
-      toast('Promoted to External', 'success')
-      router.refresh()
-    })
-  }
-
-  function handleDemote() {
-    startTransition(async () => {
-      await demoteRevision(revision.id, projectId)
-      toast('Demoted to Internal', 'success')
-      router.refresh()
-    })
-  }
-
   const label = getLabel(revision)
   const dateStr = revision.createdAt
     ? formatDate(revision.createdAt.includes('T') ? revision.createdAt.split('T')[0] : revision.createdAt)
     : null
 
   return (
-    <Card className="bg-gray-800 border-gray-700 overflow-hidden">
+    <>
+    {/* Click-away dismissal for context menu */}
+    {contextMenu && (
+      <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} onContextMenu={e => { e.preventDefault(); setContextMenu(null) }} />
+    )}
+
+    {/* Context menu */}
+    {contextMenu && (
+      <div
+        className="fixed z-50 bg-gray-900 border border-gray-700 rounded-md shadow-xl py-1 min-w-[140px]"
+        style={{ top: contextMenu.y, left: contextMenu.x }}
+      >
+        <button
+          onClick={handleDelete}
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-gray-800 transition-colors"
+        >
+          <Trash2 size={14} /> Delete revision
+        </button>
+      </div>
+    )}
+
+    {/* Delete confirm dialog */}
+    <Dialog
+      open={showDeleteConfirm}
+      onClose={() => setShowDeleteConfirm(false)}
+      title="Delete revision?"
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-gray-300">
+          This will permanently delete <span className="text-white font-medium">{getLabel(revision)}</span>. This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>Cancel</Button>
+          <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
+            {isDeleting ? 'Deleting…' : 'Delete'}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+
+    <Card className="bg-gray-800 border-gray-700 overflow-hidden" onContextMenu={handleContextMenu}>
       <CardContent className="p-4 space-y-3">
 
         {/* Row 1: label + badge + expand toggle */}
@@ -418,29 +485,10 @@ function RevisionCard({
           </div>
         )}
 
-        {/* Promote / Demote */}
-        <div className="flex justify-end">
-          {revision.category === 'INT' ? (
-            <button
-              onClick={handlePromote}
-              disabled={isPending}
-              className="flex items-center gap-1 text-xs text-blue-500/70 hover:text-blue-300 hover:bg-blue-900/30 px-2 py-1 rounded transition-colors disabled:opacity-40"
-            >
-              <ArrowUp size={11} /> Promote to External
-            </button>
-          ) : (
-            <button
-              onClick={handleDemote}
-              disabled={isPending}
-              className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-300 hover:bg-blue-900/30 px-2 py-1 rounded transition-colors disabled:opacity-40"
-            >
-              <ArrowDown size={11} /> Demote to Internal
-            </button>
-          )}
-        </div>
 
       </CardContent>
     </Card>
+    </>
   )
 }
 
@@ -641,7 +689,6 @@ function AssetConfirmation({
 }) {
   const { toast } = useToast()
   const router = useRouter()
-  const [category, setCategory] = useState<'INT' | 'EXT'>('EXT')
   const [isPending, startTransition] = useTransition()
   const [statusText, setStatusText] = useState('')
 
@@ -688,7 +735,7 @@ function AssetConfirmation({
 
         setStatusText('Saving…')
         await addRevisionEntry(projectId, {
-          category,
+          category: 'INT',
           title: assetName,
           frameioAssetId: assetId ?? undefined,
           frameioShareLink: shareLink ?? undefined,
@@ -728,35 +775,6 @@ function AssetConfirmation({
         <div className="flex-1 min-w-0">
           <p className="text-white font-medium text-sm leading-snug break-words">{asset.name}</p>
           <p className="text-gray-500 text-xs mt-1">This will be used as the revision title.</p>
-        </div>
-      </div>
-
-      {/* Category */}
-      <div>
-        <p className="text-xs text-gray-400 mb-2">Category</p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setCategory('INT')}
-            className={`flex-1 py-2 text-sm rounded border transition-colors ${
-              category === 'INT'
-                ? 'bg-gray-600 border-gray-500 text-white'
-                : 'bg-transparent border-gray-700 text-gray-400 hover:border-gray-600'
-            }`}
-          >
-            Internal
-          </button>
-          <button
-            type="button"
-            onClick={() => setCategory('EXT')}
-            className={`flex-1 py-2 text-sm rounded border transition-colors ${
-              category === 'EXT'
-                ? 'bg-blue-700 border-blue-600 text-white'
-                : 'bg-transparent border-gray-700 text-gray-400 hover:border-gray-600'
-            }`}
-          >
-            External
-          </button>
         </div>
       </div>
 
@@ -905,24 +923,57 @@ function AddRevisionDialog({
 
 function DeliverableGroupCard({
   name,
+  postStatus,
+  deliverableId,
+  projectId,
   revisions,
   includedRevisionRounds,
   onClick,
 }: {
   name: string
+  postStatus: string | null
+  deliverableId: string
+  projectId: string
   revisions: Revision[]
   includedRevisionRounds: number
   onClick: () => void
 }) {
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+  const { toast } = useToast()
   const extCount = revisions.filter(r => r.category === 'EXT').length
   const usedRounds = Math.max(0, extCount - 1)
   const extraRounds = Math.max(0, usedRounds - includedRevisionRounds)
   const latestRevision = revisions.length > 0 ? revisions[revisions.length - 1] : null
+  const status = postStatus ?? 'not_started'
+  const badge = POST_STATUS_BADGE[status] ?? POST_STATUS_BADGE.not_started
+
+  const actionLabel: string | null =
+    (status === 'awaiting_feedback_int' || status === 'feedback_available_int')
+      ? (extCount === 0 ? 'First Draft Approved' : 'Revision Approved')
+    : (status === 'awaiting_feedback_ext' || status === 'feedback_available_ext')
+      ? 'Client Approved'
+    : null
+
+  function handleAdvance(e: React.MouseEvent) {
+    e.stopPropagation()
+    startTransition(async () => {
+      try {
+        await advanceDeliverablePostStatus(deliverableId, projectId)
+        router.refresh()
+      } catch (err: any) {
+        toast(err.message ?? 'Something went wrong', 'error')
+      }
+    })
+  }
 
   return (
-    <button
+    <div
       onClick={onClick}
-      className="w-full flex items-center gap-4 p-4 bg-gray-800 border border-gray-700 rounded-xl hover:border-gray-500 transition-colors text-left"
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => e.key === 'Enter' && onClick()}
+      className="w-full flex items-center gap-4 p-4 bg-gray-800 border border-gray-700 rounded-xl hover:border-gray-500 transition-colors text-left cursor-pointer"
     >
       <div className="w-16 h-10 rounded bg-black flex-shrink-0 overflow-hidden flex items-center justify-center">
         {latestRevision?.frameioAssetId ? (
@@ -950,8 +1001,21 @@ function DeliverableGroupCard({
         )}
       </div>
       {extraRounds > 0 && <AlertTriangle size={15} className="text-yellow-400 shrink-0" />}
+      <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${badge.className}`}>
+        {badge.label}
+      </span>
+      {actionLabel && (
+        <button
+          onClick={handleAdvance}
+          disabled={pending}
+          className="text-xs px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium shrink-0 transition-colors disabled:opacity-50 flex items-center gap-1"
+        >
+          {pending && <Loader2 size={11} className="animate-spin" />}
+          {actionLabel}
+        </button>
+      )}
       <ChevronRight size={16} className="text-gray-500 shrink-0" />
-    </button>
+    </div>
   )
 }
 
@@ -976,6 +1040,7 @@ export function RevisionsClient({
   const router = useRouter()
   const [addDialog, setAddDialog] = useState(false)
   const [isRefreshing, startRefreshTransition] = useTransition()
+  const [isAdvancing, startAdvanceTransition] = useTransition()
   const [selectedGroup, setSelectedGroup] = useState<null | string>(null)
 
   if (!frameioLinked) {
@@ -1006,6 +1071,18 @@ export function RevisionsClient({
       await refreshRevisionComments(projectId)
       toast('Comment counts refreshed', 'success')
       router.refresh()
+    })
+  }
+
+  function handleAdvanceStatus(deliverableId: string) {
+    startAdvanceTransition(async () => {
+      try {
+        await advanceDeliverablePostStatus(deliverableId, projectId)
+        toast('Status updated', 'success')
+        router.refresh()
+      } catch (err: any) {
+        toast(err.message ?? 'Something went wrong', 'error')
+      }
     })
   }
 
@@ -1044,6 +1121,9 @@ export function RevisionsClient({
             <DeliverableGroupCard
               key={d.id}
               name={d.name}
+              postStatus={d.postStatus}
+              deliverableId={d.id}
+              projectId={projectId}
               revisions={getDeliverableRevisions(d.id)}
               includedRevisionRounds={includedRevisionRounds}
               onClick={() => setSelectedGroup(d.id)}
@@ -1082,7 +1162,39 @@ export function RevisionsClient({
             <ChevronLeft size={18} />
           </button>
           <div>
-            <h2 className="text-gray-900 font-semibold text-lg">{currentDeliverableName}</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-gray-900 font-semibold text-lg">{currentDeliverableName}</h2>
+              {(() => {
+                const currentDeliverable = deliverables.find(d => d.id === selectedGroup)
+                if (!currentDeliverable) return null
+                const status = currentDeliverable.postStatus ?? 'not_started'
+                const badge = POST_STATUS_BADGE_LIGHT[status] ?? POST_STATUS_BADGE_LIGHT.not_started
+                const drillExtCount = groupRevisions.filter(r => r.category === 'EXT').length
+                const drillActionLabel: string | null =
+                  (status === 'awaiting_feedback_int' || status === 'feedback_available_int')
+                    ? (drillExtCount === 0 ? 'First Draft Approved' : 'Revision Approved')
+                  : (status === 'awaiting_feedback_ext' || status === 'feedback_available_ext')
+                    ? 'Client Approved'
+                  : null
+                return (
+                  <>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}>
+                      {badge.label}
+                    </span>
+                    {drillActionLabel && (
+                      <button
+                        onClick={() => handleAdvanceStatus(selectedGroup!)}
+                        disabled={isAdvancing}
+                        className="text-xs px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors disabled:opacity-50 flex items-center gap-1"
+                      >
+                        {isAdvancing && <Loader2 size={11} className="animate-spin" />}
+                        {drillActionLabel}
+                      </button>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
             <p className="text-gray-500 text-sm mt-0.5">
               {usedRounds} of {includedRevisionRounds} included client rounds used
             </p>

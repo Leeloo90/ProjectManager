@@ -85,6 +85,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         settings={settings ?? null}
         companies={allCompanies}
         clients={allClients}
+        deliverables={projectDeliverables}
+        revisions={projectRevisions}
       />
     </div>
   )

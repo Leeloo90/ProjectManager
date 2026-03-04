@@ -14,16 +14,94 @@ import {
   formatCurrency, formatDate, getStatusBadgeClass, getStatusConfig, PROJECT_STATUSES,
 } from '@/lib/utils'
 import {
-  updateProject, updateProjectStatus, deleteProject, unlinkFrameioProject
+  updateProject, updateProjectStatus, deleteProject, unlinkFrameioProject, advanceDeliverablePostStatus
 } from '../actions'
 import {
   Edit, Trash2, AlertTriangle, ExternalLink, Camera, Package,
-  RotateCcw, Film, ChevronRight, Loader2, CheckSquare,
+  RotateCcw, Film, ChevronRight, Loader2, CheckSquare, Activity,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { FrameioLinkDialog } from './frameio-link-dialog'
 import Link from 'next/link'
+
+type Deliverable = {
+  id: string
+  name: string
+  postStatus: string | null
+}
+
+type Revision = {
+  id: string
+  deliverableId: string | null
+  category: string
+  orderId: number
+  commentCount: number | null
+}
+
+const POST_STATUS_CONFIG = {
+  not_started:            { label: 'Not Started',           className: 'bg-gray-100 text-gray-500' },
+  awaiting_feedback_int:  { label: 'Awaiting INT Feedback', className: 'bg-blue-100 text-blue-700' },
+  feedback_available_int: { label: 'INT Feedback Ready',    className: 'bg-orange-100 text-orange-700' },
+  awaiting_feedback_ext:  { label: 'Awaiting EXT Feedback', className: 'bg-purple-100 text-purple-700' },
+  feedback_available_ext: { label: 'Client Feedback Available', className: 'bg-amber-100 text-amber-700' },
+  approved:               { label: 'Approved',              className: 'bg-green-100 text-green-700' },
+} as const
+
+function DeliverableStatusRow({ deliverable, revisions, projectId }: {
+  deliverable: Deliverable
+  revisions: Revision[]
+  projectId: string
+}) {
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+  const { toast } = useToast()
+  const status = (deliverable.postStatus ?? 'not_started') as keyof typeof POST_STATUS_CONFIG
+  const config = POST_STATUS_CONFIG[status] ?? POST_STATUS_CONFIG.not_started
+  const latestRevision = [...revisions].sort((a, b) => b.orderId - a.orderId)[0] ?? null
+  const extCount = revisions.filter(r => r.category === 'EXT').length
+
+  const actionLabel =
+    (status === 'awaiting_feedback_int' || status === 'feedback_available_int')
+      ? (extCount === 0 ? 'First Draft Approved' : 'Revision Approved')
+    : (status === 'awaiting_feedback_ext' || status === 'feedback_available_ext')
+      ? 'Client Approved'
+    : status === 'approved' ? 'Reopen'
+    : null
+
+  function handleAdvance() {
+    startTransition(async () => {
+      try {
+        await advanceDeliverablePostStatus(deliverable.id, projectId)
+        router.refresh()
+      } catch (e: any) {
+        toast(e.message, 'error')
+      }
+    })
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-gray-100 last:border-0">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900 truncate">{deliverable.name}</p>
+        {latestRevision && (
+          <p className="text-xs text-gray-500 mt-0.5">
+            Latest: [{latestRevision.category}] · {latestRevision.commentCount ?? 0} comment{latestRevision.commentCount === 1 ? '' : 's'}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Badge className={config.className}>{config.label}</Badge>
+        {actionLabel && (
+          <Button size="sm" variant="outline" onClick={handleAdvance} disabled={pending}>
+            {pending && <Loader2 size={13} className="animate-spin" />}
+            {actionLabel}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 type Project = {
   id: string; name: string; status: string; startDate: string; deadline: string;
@@ -114,6 +192,8 @@ export function ProjectDetailClient({
   settings,
   companies,
   clients,
+  deliverables,
+  revisions,
 }: {
   project: Project
   deliverableCount: number
@@ -128,6 +208,8 @@ export function ProjectDetailClient({
   settings: any
   companies: any[]
   clients: any[]
+  deliverables: Deliverable[]
+  revisions: Revision[]
 }) {
   const { toast } = useToast()
   const router = useRouter()
@@ -369,6 +451,27 @@ export function ProjectDetailClient({
         </Link>
 
       </div>
+
+      {/* Post Production Status */}
+      {deliverables.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity size={16} /> Post Production
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-6 pb-4">
+            {deliverables.map(d => (
+              <DeliverableStatusRow
+                key={d.id}
+                deliverable={d}
+                revisions={revisions.filter(r => r.deliverableId === d.id)}
+                projectId={project.id}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Project Total */}
       <Card className="bg-[#1e3a5f] border-[#1e3a5f]">
